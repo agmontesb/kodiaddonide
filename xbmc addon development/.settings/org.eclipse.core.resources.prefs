@@ -1,0 +1,14 @@
+eclipse.preferences.version=1
+encoding//src/xbmcStubs/KodiFrontEnd.py=utf-8
+encoding//src/xbmcStubs/KodiProgram.py=utf-8
+encoding//src/xbmcStubs/beginToSeeAddon.py=utf-8
+encoding//src/xbmcStubs/scriptsToTest.py=utf-8
+encoding//src/xbmcStubs/xbmcProgram.py=utf-8
+encoding//src/xbmcUI/BrowserEmulator.py=utf-8
+encoding//src/xbmcUI/KodiFrontEnd.py=utf-8
+encoding//src/xbmcUI/ParseThreads.py=utf-8
+encoding//src/xbmcUI/XbmcAddonIDE.py=utf-8
+encoding//src/xbmcUI/basicFunc.py=utf-8
+encoding//src/xbmcUI/codeToTest.py=utf-8
+encoding//src/xbmcUI/menuThreads.py=utf-8
+encoding//src/xbmcUI/sesame.py=utf8
