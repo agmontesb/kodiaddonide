@@ -252,11 +252,7 @@ class myScrolledList(tk.Frame):
         widget = self.widgetContainer.children['label' + str(k)]
         place_info = self.widgetContainer.place_info()
         if widget.winfo_y() + int(place_info['y']) < 0:
-            place_info['y'] = 0
-            self.widgetContainer.place(**place_info)
-            page = self.leftPane.winfo_height()
-            last = float((1.0*page)/self.widgetContainer.winfo_height())
-            self.vsb.set(0, last)
+            self.yview(tk.MOVETO, 0)
         elif widget.winfo_y() + widget.winfo_height() + int(place_info['y']) > self.leftPane.winfo_height():
             self.yview(tk.SCROLL, 1, tk.UNITS)
         widget.focus_force()
@@ -269,10 +265,8 @@ class myScrolledList(tk.Frame):
         place_info = self.widgetContainer.place_info()
         if widget.winfo_y() + int(place_info['y']) > self.leftPane.winfo_height():
             page = self.leftPane.winfo_height()
-            place_info['y'] = page - self.widgetContainer.winfo_height()
-            self.widgetContainer.place(**place_info)
-            first = float(abs(1.0*place_info['y'])/self.widgetContainer.winfo_height())
-            self.vsb.set(first, 1.0)
+            nUnits = 1.0 - float(1.0*page)/self.widgetContainer.winfo_height()
+            self.yview(tk.MOVETO, nUnits)
         elif widget.winfo_y() + int(place_info['y']) < 0:
             self.yview(tk.SCROLL, -1, tk.UNITS)
         widget.focus_force()
@@ -303,8 +297,11 @@ class myScrolledList(tk.Frame):
                 deltaPos = -int(nUnits) * page
             place_info['y'] = min(0, max(posMax, int(place_info['y']) + deltaPos))
         elif mType == tk.MOVETO:
-            deltaPos = int(float(nUnits) * self.widgetContainer.winfo_height())/step
-            place_info['y'] = -deltaPos * step
+            if nUnits < (1.0 - float(1.0*page)/self.widgetContainer.winfo_height()):
+                deltaPos = int(float(nUnits) * self.widgetContainer.winfo_height())/step
+                place_info['y'] = -deltaPos * step
+            else:
+                place_info['y'] = -nUnits * self.widgetContainer.winfo_height()
         self.widgetContainer.place(**place_info)
         first = float(abs(1.0*place_info['y'])/self.widgetContainer.winfo_height())
         last = first + float((1.0*page)/self.widgetContainer.winfo_height())
