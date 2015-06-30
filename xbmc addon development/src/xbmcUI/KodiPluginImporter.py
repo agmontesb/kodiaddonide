@@ -188,9 +188,9 @@ def remove_path_hooks(hookId = None):
 def pyDevSetup():
     import os
     import sys
-    xbmcRoot = r'C:\Eclipse\Workspace\xbmc addon development\src\xbmcStubs'
+    xbmcRoot = r'C:\Users\Alex Montes Barrios\git\addonDevelopment\xbmc addon development\src\xbmcStubs'
     addonRoot = r'C:\Users\Alex Montes Barrios\AppData\Roaming\Kodi\addons'
-    sys.path.insert(0, r'C:\Eclipse\Workspace\xbmc addon development\src\xbmcUI')
+    sys.path.insert(0, r'C:\Users\Alex Montes Barrios\git\addonDevelopment\xbmc addon development\src\xbmcUI')
     import KodiAddonImporter as kai
     kai.install_meta(xbmcRoot, addonRoot, hookId = 'pydev_hook', atype = 'kodi')
     import urlresolver

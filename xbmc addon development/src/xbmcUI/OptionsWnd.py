@@ -238,13 +238,110 @@ class settLabel(baseWidget):
     def setGUI(self, options):
         tk.Label(self, text = options.get('label')).pack(side = tk.LEFT, fill = tk.X, expand = 1)
 
+class flatScrollBar(tk.Frame):
+    def __init__(self, master, **options):
+        self.command = options.pop('command') if options.has_key('command') else None
+        tk.Frame.__init__(self, master, width = 16, takefocus = 1)
+        self.has_focus = False
+        self.setGUI()
+        self.bind('<Enter>', self.enter)
+        self.bind('<Leave>', self.leave)
+        self.bind('<FocusIn>', self.focusin)
+        self.bind('<FocusOut>', self.focusout)
+        self.bind('<Configure>', self.configure)
+        self.bind('<Button-1>', self.button1)
+        self.bind('<ButtonRelease-1>', self.buttonrelease1)
+        self.bind('<B1-Motion>', self.b1motion)
+        self.event_add('<<allowedkeys>>', '<Up>','<Prior>','<Down>','<Next>')
+        self.bind('<<allowedkeys>>', self.keyPress)
+        
+    def configure(self, event):
+        if self != event.widget: return
+        self.height = event.height
+        pass
+        
+    def enter(self, event):
+        if not self.has_focus:
+            self.slider['bg'] = 'red'
+            pass
+    
+    def leave(self, event):
+        if not self.has_focus:
+            self.slider['bg'] = 'black'
+            pass
+    
+    def focusin(self,event):
+        self.has_focus = True
+        self.slider['bg'] = 'red'
+        pass
+    
+    def focusout(self,event):
+        self.has_focus = False
+        self.slider['bg'] = 'black'
+        pass
+        
+    def button1(self, event):
+        self.focus_set()
+        place_info = self.slider.place_info()
+        first = float(place_info['rely'])
+        last = first + float(place_info['relheight'])
+        posy = float(1.0*(event.y_root - self.winfo_rooty())/self.height)
+        if posy < first:
+            self.mouseclick.place(rely = 0, relwidth = 1.0, relheight = first)
+        elif posy > last:
+            self.mouseclick.place(rely = last, relwidth = 1.0, relheight = 1 - last)
+        self.yclick = posy
+        pass
+    
+    def buttonrelease1(self,event):
+        self.mouseclick.place_forget()
+        place_info = self.slider.place_info()
+        sliderWidth = float(place_info['relheight'])
+        sliderPos = max(0, min(self.yclick - sliderWidth/2, 1 - sliderWidth)) 
+        if self.command: self.command(tk.MOVETO, sliderPos)
+        pass
+    
+    def b1motion(self,event):
+        self.mouseclick.place_forget()
+        self.yclick = float(1.0*(event.y_root - self.winfo_rooty())/self.height)
+        self.buttonrelease1(event)
+        pass
+        
+    def keyPress(self, event):
+        if not self.command:return
+        if event.keysym in ['Up', 'Prior']:
+            scrollDirection = -1
+        elif event.keysym in ['Down', 'Next']:
+            scrollDirection = 1
+        self.command(tk.SCROLL, scrollDirection, tk.PAGES)
+        
+    def setGUI(self):
+        self.slider = tk.Frame(self, bg = 'black')
+        self.slider.bindtags((self,) + self.slider.bindtags())
+        self.mouseclick = tk.Frame(self, bd = 1, highlightbackground='dark grey', highlightthickness = 2)
+        self.slider.place(relwidth = 1.0)
+        self.set(0.0, 0.1)
+        
+    def set(self, first, last):
+        sliderH = last - first
+        place_info = self.slider.place_info()
+        place_info['relheight'] = sliderH
+        place_info['rely'] = max(0, min(first, 1 - sliderH))
+        self.slider.place(**place_info)
+        
+        
+
+
+
 class myScrolledList(tk.Frame):
     def __init__(self, master):
         tk.Frame.__init__(self, master)
         self.setGUI()
-        self.bind_all('<Down>', self.nextWidget)
-        self.bind_all('<Up>', self.prevWidget)        
+#         self.bind_all('<Down>', self.nextWidget)
+#         self.bind_all('<Up>', self.prevWidget)        
         self.widgetContainer.children['label0'].focus_force()
+#         self.vsb.set(0, float(1.0*self.leftPane.winfo_height())/self.widgetContainer.winfo_height())
+#         self.vsb.focus_force()
 
     def nextWidget(self, event):
         name = event.widget.name
@@ -274,7 +371,7 @@ class myScrolledList(tk.Frame):
 
     
     def setGUI(self):
-        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.yview)
+        self.vsb = flatScrollBar(self, command=self.yview)
         self.vsb.pack(side = tk.RIGHT, fill = tk.Y)
 
         self.leftPane = tk.Frame(self, width = 100, height = 180)
@@ -301,7 +398,8 @@ class myScrolledList(tk.Frame):
                 deltaPos = int(float(nUnits) * self.widgetContainer.winfo_height())/step
                 place_info['y'] = -deltaPos * step
             else:
-                place_info['y'] = -nUnits * self.widgetContainer.winfo_height()
+#                 place_info['y'] = -nUnits * self.widgetContainer.winfo_height()
+                place_info['y'] = page -  self.widgetContainer.winfo_height()
         self.widgetContainer.place(**place_info)
         first = float(abs(1.0*place_info['y'])/self.widgetContainer.winfo_height())
         last = first + float((1.0*page)/self.widgetContainer.winfo_height())
@@ -1391,7 +1489,7 @@ if __name__ == "__main__":
     Root = tk.Tk()
 #     Root.withdraw()
 #     Root.resizable(0, 0)
- 
+#     Root.attributes('-alpha', 0.1)          #Esto hacee la ventana transparente
     Root.title('PRINCIPAL')
 #     theSettings = AppSettingDialog(Root, fileObject, title = 'Test Window Case')
 #     print theSettings.result
