@@ -25,7 +25,7 @@ import xbmcStubs.collapsingFrame as collapsingFrame
 import xbmcUI.SintaxEditor as SintaxEditor
 from PIL import Image, ImageTk  # @UnresolvedImport
 import KodiAddonImporter
-xbmcStubsDir = r'C:\Eclipse\Workspace\xbmc addon development\src\xbmcStubs'
+xbmcStubsDir = r'C:\Users\Alex Montes Barrios\git\addonDevelopment\xbmc addon development\src\xbmcStubs'
 addonRoot = r'C:\Users\Alex Montes Barrios\AppData\Roaming\Kodi\addons'
 KodiAddonImporter.install_meta(xbmcStubsDir, hookId = 'xbmc_mock', atype = 'xbmc')
 import xbmc, xbmcgui, xbmcaddon, xbmcplugin, xbmcvfs  # @UnresolvedImport

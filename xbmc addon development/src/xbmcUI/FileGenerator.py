@@ -316,7 +316,7 @@ class addonFile_addonXmlFile:
     
     def getSource(self):
         allSettings = self.settings.getParam()
-        return self.getAddonXmlFile(r'C:\eclipse\Workspace\xbmc addon development\src\xbmcUI\addonXmlTemplate.xml', allSettings)
+        return self.getAddonXmlFile(r'C:\Users\Alex Montes Barrios\git\addonDevelopment\xbmc addon development\src\xbmcUI\addonXmlTemplate.xml', allSettings)
     
     def getAddonXmlFile(self, xmlTemplate, settings):
         with open(xmlTemplate, 'r') as f:
