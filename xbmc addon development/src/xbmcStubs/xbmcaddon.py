@@ -6,6 +6,20 @@ import  xml.dom.minidom as minidom
 import re
 
 class Addon(object):
+    def __new__(cls, *args, **kwargs):
+        if args:
+            addonId = args[0]
+        else:
+            posIni = len('plugin://')
+            posFin = sys.argv[0].find('/', posIni)
+            addonId = sys.argv[0][posIni:posFin]
+            addonId = kwargs.get('id',addonId)
+        pathDir = xbmc.translatePath('special://home/addons/' + addonId)
+        addonXmlFile = os.path.join(pathDir, 'addon.xml')
+        if  not os.path.exists(addonXmlFile): return False
+        inst = object.__new__(cls, *args, **kwargs)
+        return inst
+    
     def __init__(self, *args, **kwargs):
         """
         --Creates a newAddon class.

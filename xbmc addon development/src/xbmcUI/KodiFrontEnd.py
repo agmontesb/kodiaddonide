@@ -255,6 +255,7 @@ class KodiFrontEnd(tk.Frame):
         for addonId in sorted(addons):
             kwargs = {'handle':0, 'isFolder':True, 'totalItems':0}
             addon = xbmcaddon.Addon(addonId)
+            if not addon: continue
             kwargs['url'] = 'plugin://' + addonId + '/?'
             name = addon.getAddonInfo('name')
             if addonId == self.testAddon: name = '[COLOR red]' + name + ' (test mode)[/COLOR]'

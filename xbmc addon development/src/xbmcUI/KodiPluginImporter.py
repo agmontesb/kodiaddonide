@@ -20,7 +20,7 @@ class KodiPluginImportFinder(object):
         self.installedPlugin = []
         plugins = [pluginId for pluginId in os.listdir(self.pluginRoot) if pluginId.startswith('plugin.')]
         for plugin in plugins:
-            self.installedPlugin.appen(os.path.join(self.pluginRoot, plugin))
+            self.installedPlugin.append(os.path.join(self.pluginRoot, plugin))
         
               
     def isAbsolutePath(self, baseName):
