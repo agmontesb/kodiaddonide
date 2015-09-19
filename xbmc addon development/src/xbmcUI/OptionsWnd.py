@@ -556,8 +556,14 @@ class settText(baseWidget):
         self.setValue(self.default)
         tk.Entry(self, name = self.id, textvariable = self.value ).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
         
+    def setValue(self, value):
+        if value == None:
+            self.value.set('')
+        else:
+            self.value.set(value)
+        
     def getValue(self):
-        return self.value.get() if self.value.get() != '' else None 
+        return self.value.get() if self.value.get() != '' else ''
 
 
 class settBool(baseWidget):

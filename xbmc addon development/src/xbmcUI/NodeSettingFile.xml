@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <settings>
   <category label="thread">
-    <setting id="nodeId" type="text" label="Node ID:   " default=""  enable="!eq(-0,'media')"/>
+    <setting id="nodeid" type="text" label="Node ID:   " default=""  enable="!eq(-0,'media')"/>
     <setting type="lsep" label ="Attributes:    "/>
     <setting id="name" type="text" label="Name:   " default="" enable="!eq(-2,'media')"/>
     <setting id="plainnode" type="bool" label="Plain this node:   " default="false"/>

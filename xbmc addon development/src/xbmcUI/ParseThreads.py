@@ -45,6 +45,18 @@ class RegexpBar(tk.Frame):
 
     def setTextWidget(self, tWidget):
         self.textWidget = tWidget
+        
+    def setTreeWidget(self, treeWdgt):
+        self.tree = treeWdgt
+        self.tree.bind('<<TreeviewSelect>>', self.onTreeSel)
+
+    def onTreeSel(self,event):
+        selId = self.tree.selection()[0]
+        if selId and selId != self.tree.get_children()[self.actMatchIndx - 1]:
+            nVar = len(self.tree['displaycolumns']) - 2
+            insPos = self.tree.set(selId, column = 'var' + str(nVar))
+            self.textWidget.mark_set('insert', '1.0 + ' + str(int(insPos) - 1) + ' chars')
+            self.getMatchTag(nextMatch = True)
 
     def setDropDownFiler(self, callbckFunc):
         self.dropDownFiler = callbckFunc 
@@ -250,13 +262,17 @@ class RegexpBar(tk.Frame):
             selTag = (matchTags[0], matchTags[1]) if nextMatch else (matchTags[-2], matchTags[-1])
         matchStr = ' '  + str(nPos) + ' de ' + str(nMatchs)
         self.actMatchIndx = nPos
-
+        
         self.textWidget.tag_remove('actMatch', '1.0', 'end')
         self.textWidget.tag_add('actMatch', *selTag)
         self.textWidget.mark_set('insert', selTag[0])
         self.textWidget.see(selTag[1 if nextMatch else 0])            
         self.matchLabel.config(text=matchStr, bg = 'SystemButtonFace')
         self.actMatch(selTag)
+
+        self.tree.see(self.tree.get_children()[nPos - 1])
+        self.tree.selection_set(self.tree.get_children()[nPos - 1])
+
         
     def getPatternMatch(self, *dummy):
         if self.entry.current() != -1:
@@ -296,7 +312,14 @@ class RegexpBar(tk.Frame):
             matchLabel.config(text = '', bg = 'SystemButtonFace')
             return None
         
+        tags = re.findall(r'\?P<([^>]+)>', regexPattern) or []
+        tags += ['PosINI', 'PosFIN']
+        self.tree['displaycolumns']= [ k for k in range(len(tags))]
+        for k, colName in enumerate(tags):            
+            self.tree.heading(k, text = colName)
+
         if self.threadFlag == 'stop':
+            
             self.threadFlag = 'run'
             from threading import Thread
             self.t = Thread(name="searchThread", target=self.lengthProcess, args=(reg, content, baseIndex))
@@ -323,6 +346,9 @@ class RegexpBar(tk.Frame):
         for match in tagColor:
             self.textWidget.tag_remove(match, tagIni, tagFin)
             
+        self.tree.delete(*self.tree.get_children())
+        
+            
     def setTag(self, tag, baseIndex, match, grpIndx):
         tagIni = baseIndex + ' + %d chars'%match.start(grpIndx)
         tagFin = baseIndex + ' + %d chars'%match.end(grpIndx)
@@ -334,6 +360,7 @@ class RegexpBar(tk.Frame):
             tagIni = baseIndex + ' + %d chars'%match.start(key)
             tagFin = baseIndex + ' + %d chars'%match.end(key)
             self.textWidget.tag_add('group', tagIni, tagFin)
+        
         urlkeys = [key for key in match.groupdict().keys() if key.lower().endswith('url')] 
         for key in urlkeys:
             tagIni = baseIndex + ' + %d chars'%match.start(key)
@@ -353,6 +380,12 @@ class RegexpBar(tk.Frame):
                 matchColor = tagColor[k%2]
                 self.setTag(matchColor, baseIndex, match, 0)
                 self.setTag('matchTag', baseIndex, match, 0)                    
+
+                nCols = len(self.tree['displaycolumns']) - 2
+                tags = [self.tree.heading(elem, option='text') for elem in range(nCols)]
+                tagValues = [match.groupdict()[elem].strip('\r\n') for elem in tags] + [match.start(0), match.end(0)]
+                self.tree.insert('', 'end', values = tagValues)     #Por revisar
+                
                 if k > 1:
                     matchStr = ' '  + str(self.actMatchIndx) + ' de ' + str(k)
                     self.matchLabel.config(text = matchStr)
@@ -1113,13 +1146,21 @@ class RegexpFrame(tk.Frame):
         self.regexpFrame.setZoomManager(self.zoom)
         
         
-        frame2 = tk.Frame(self)
+#         frame2 = tk.Frame(self)
+#         frame2.pack(fill = tk.BOTH, expand = 1)
+#         self.txtEditor = PythonEditor(frame2)
+
+        frame2 = collapsingFrame.collapsingFrame(self, buttConf = 'mRM')
         frame2.pack(fill = tk.BOTH, expand = 1)
-        self.txtEditor = PythonEditor(frame2)
+        self.txtEditor = PythonEditor(frame2.frstWidget)
+        self.tree = ttk.Treeview(frame2.scndWidget, displaycolumns = '#all', show = 'headings', columns = ('var0','var1','var2','var3','var4','var5','var6','var7'))
+        self.tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = 1)
+        
         self.txtEditor.setKeyHandler(self) 
         self.txtEditor.pack(side = tk.LEFT, fill = tk.BOTH, expand = 1)
         self.txtEditor.setHyperlinkManager(self.setActiveUrl)        
         self.regexpFrame.setTextWidget(self.txtEditor.textw)
+        self.regexpFrame.setTreeWidget(self.tree)
         self.txtEditor.textw.bind('<Button-3>',self.do_popup)
         
     def zoom(self, btnText):

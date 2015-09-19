@@ -206,13 +206,14 @@ def getMenuHeaderFooter(param, args, data, menus):
             tags = re.findall(r'\?P<([^>]+)>', opdefault)
             match =re.search(opdefault, data)
             if tags:
-                varName = match.group('varname')
-                urlquery = urlparse.urlsplit(url).query
-                queryDict = dict(urlparse.parse_qsl(urlquery))
-                if queryDict.has_key('page'): queryDict['page'] = 1
-                if 'defvalue' in tags:
+                if 'label' in tags:
+                    opdefault = htmlUnescape(match.group(1) if match else '')
+                elif 'defvalue' in tags:
                     opdefault = htmlUnescape(match.group('defvalue'))
-                else:
+                elif 'varname' in tags:
+                    varName = match.group('varname')
+                    urlquery = urlparse.urlsplit(url).query
+                    queryDict = dict(urlparse.parse_qsl(urlquery))
                     opdefault = queryDict.get(varName, '')
                     try:
                         indx = varValue.index(opdefault)
@@ -220,12 +221,11 @@ def getMenuHeaderFooter(param, args, data, menus):
                         opdefault = ''
                     else:
                         opdefault = menuLabel[indx]
-                menuUrl = []
-                for elem in varValue:
-                    queryDict[varName] = elem
-                    menuUrl.append('?' + urllib.urlencode(queryDict))
-            else:
-                opdefault = htmlUnescape(match.group(1) if match else '')
+                    menuUrl = []
+                    for elem in varValue:
+                        queryDict[varName] = elem
+                        menuUrl.append('?' + urllib.urlencode(queryDict))
+                
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
         paramDict.update({'section':param, 'url':url, param:k, 'menu':menuId})
         paramDict['menulabel'] = base64.urlsafe_b64encode(str(menuLabel))
@@ -235,36 +235,36 @@ def getMenuHeaderFooter(param, args, data, menus):
         headerFooter.append([paramDict, itemParam, None])
     return headerFooter
     
-# def getMenuHeaderFooterOLD(param, args, data, menus):
-#     htmlUnescape = HTMLParser.HTMLParser().unescape
-#     menuId = args.get('menu', ['rootmenu'])[0]
-#     url = args.get("url")[0]
-#     headerFooter = []
-#     for k, elem in enumerate(menus):
-#         opLabel, opregexp = elem
-#         opdefault, sep, opvalues = opregexp.partition('|')
-#         opvalues = opvalues or opdefault
-#         opdefault = opdefault if sep else ''
-#         pIni, pFin = 0, -1
-#         if opdefault.startswith('(?#<SPAN>)'):
-#             pIni, match = -1, re.search(opdefault, data)
-#             if match: pIni, pFin = match.span(0)
-#         opmenu = re.findall(opvalues, data[pIni:pFin])
-#         if not opmenu: continue
-#         tags = re.findall(r'\?P<([^>]+)>', opvalues)
-#         menuUrl = [elem[tags.index('url')] for elem in opmenu] if len(tags) > 1 else opmenu
-#         if 'label' in tags:
-#             menuLabel = map(htmlUnescape, [elem[tags.index('label')] for elem in opmenu])
-#         else:
-#             menuLabel = len(menuUrl)*['Label placeholder']
-#         if opdefault:
-#             match =re.search(opdefault, data)
-#             opdefault = htmlUnescape(match.group(1) if match else '')
-#         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-#         paramDict.update({'section':param, 'url':url, param:k, 'menu':menuId, 'menulabel': str(menuLabel), 'menuurl':str(menuUrl)})      
-#         itemParam = {'isFolder':True, 'label':opLabel + opdefault}
-#         headerFooter.append([paramDict, itemParam, None])
-#     return headerFooter
+def getMenuHeaderFooterOLD(param, args, data, menus):
+    htmlUnescape = HTMLParser.HTMLParser().unescape
+    menuId = args.get('menu', ['rootmenu'])[0]
+    url = args.get("url")[0]
+    headerFooter = []
+    for k, elem in enumerate(menus):
+        opLabel, opregexp = elem
+        opdefault, sep, opvalues = opregexp.partition('|')
+        opvalues = opvalues or opdefault
+        opdefault = opdefault if sep else ''
+        pIni, pFin = 0, -1
+        if opdefault.startswith('(?#<SPAN>)'):
+            pIni, match = -1, re.search(opdefault, data)
+            if match: pIni, pFin = match.span(0)
+        opmenu = re.findall(opvalues, data[pIni:pFin])
+        if not opmenu: continue
+        tags = re.findall(r'\?P<([^>]+)>', opvalues)
+        menuUrl = [elem[tags.index('url')] for elem in opmenu] if len(tags) > 1 else opmenu
+        if 'label' in tags:
+            menuLabel = map(htmlUnescape, [elem[tags.index('label')] for elem in opmenu])
+        else:
+            menuLabel = len(menuUrl) * ['Label placeholder']
+        if opdefault:
+            match = re.search(opdefault, data)
+            opdefault = htmlUnescape(match.group(1) if match else '')
+        paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
+        paramDict.update({'section':param, 'url':url, param:k, 'menu':menuId, 'menulabel': str(menuLabel), 'menuurl':str(menuUrl)})      
+        itemParam = {'isFolder':True, 'label':opLabel + opdefault}
+        headerFooter.append([paramDict, itemParam, None])
+    return headerFooter
 
 
 def processHeaderFooter(param, args, menus):
