@@ -18,6 +18,7 @@ import httplib
 import tkMessageBox
 import urlparse
 import re
+import CustomRegEx
 import Queue
 import xml.etree.ElementTree as ET
 import time
@@ -304,7 +305,7 @@ class RegexpBar(tk.Frame):
         
         yesCompFlag = len(regexPattern) > 0
         try:
-            reg = re.compile(regexPattern, compFlags)
+            reg = CustomRegEx.compile(regexPattern, compFlags)
         except:
             yesCompFlag = False
 
@@ -312,7 +313,7 @@ class RegexpBar(tk.Frame):
             matchLabel.config(text = '', bg = 'SystemButtonFace')
             return None
         
-        tags = re.findall(r'\?P<([^>]+)>', regexPattern) or []
+        tags = sorted(reg.groupindex.keys(), lambda x, y: reg.groupindex[x] - reg.groupindex[y])
         tags += ['PosINI', 'PosFIN']
         self.tree['displaycolumns']= [ k for k in range(len(tags))]
         for k, colName in enumerate(tags):            
@@ -403,7 +404,7 @@ class RegexpBar(tk.Frame):
             for button in [self.butFirst, self.butLast, self.butNext, self.butPrev]:
                 button.config(state=btState)
      
-        if not self.queue.empty(): self.activeCallBack.append(self.after(100, self.updateGUI))
+        if self.threadFlag == 'run' or not self.queue.empty(): self.activeCallBack.append(self.after(100, self.updateGUI))
         
 
 
