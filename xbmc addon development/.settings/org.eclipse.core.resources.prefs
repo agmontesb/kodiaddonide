@@ -5,6 +5,7 @@ encoding//src/xbmcStubs/beginToSeeAddon.py=utf-8
 encoding//src/xbmcStubs/scriptsToTest.py=utf-8
 encoding//src/xbmcStubs/xbmcProgram.py=utf-8
 encoding//src/xbmcUI/BrowserEmulator.py=utf-8
+encoding//src/xbmcUI/CustomRegEx.py=utf-8
 encoding//src/xbmcUI/KodiFrontEnd.py=utf-8
 encoding//src/xbmcUI/ParseThreads.py=utf-8
 encoding//src/xbmcUI/XbmcAddonIDE.py=utf-8
