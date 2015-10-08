@@ -4,10 +4,12 @@ Created on 19/09/2015
 
 @author: Alex Montes Barrios
 '''
-import re
 from collections import namedtuple
-from timeit import template
 from operator import pos
+import re
+from timeit import template
+
+
 Token = namedtuple('Token', ['type', 'value'])
 
 PREFIX = r'(?P<PREFIX>(?s).+(?=<!DOCTYPE))'
@@ -438,28 +440,58 @@ def compile(regexPattern, compFlags):
     td..a.href=url : td..a  es notación compacta de td.div.a
     
     >>> req = compile(r'(?#<TAG tr td.width div.class="playlist_thumb" td.div.a.img.src=icon td[2].div[2].*=hist td..a.href=url>)', 0)
+    >>> req.tags.keys()
+    ['tr.td[2].div[2]', 'tr.div', 'tr.td', 'tr', 'tr.td.div.a.img', 'tr.td..a']
     >>> req.varList
     [['tr.td.div.a.img.src', 'icon'], ['tr.td[2].div[2].*', 'hist'], ['tr.td..a.href', 'url']]
-    >>> req.tags
-    {'tr.td[2].div[2]': {'*': ''}, 'tr.div': {'class': <_sre.SRE_Pattern object at 0x024903C8>}, 'tr.td': {'width': ''}, 'tr': {}, 'tr.td.div.a.img': {'src': ''}, 'tr.td..a': {'href': ''}}
+    
+    >>> equis = compile('(?#<TAG ese a.*="http//esto/es/prueba"=icon href=url>)', 0)
+    >>> equis.varList
+    [['ese.a.*', 'icon'], ['ese.href', 'url']]
+    >>> for tag in equis.tags:
+    ...    print tag, [(key, equis.tags[tag][key].pattern) for key in equis.tags[tag] if equis.tags[tag][key]]
+    ... 
+    ese []
+    ese.a [('*', 'http//esto/es/prueba\\\\Z')]
+    
+    >>> equis = compile('(?#<TAG a href span.src=icon span.*=label div.id>)',0)
+    >>> equis.tags
+    {'a': {'href': ''}, 'a.div': {'id': ''}, 'a.span': {'src': '', '*': ''}}
+    >>> equis = compile('(?#<TAG a href span(src=icon *=label) div.id>)',0)
+    >>> equis.tags
+    {'a': {'href': ''}, 'a.div': {'id': ''}, 'a.span': {'src': '', '*': ''}}
+    >>> equis = compile('(?#<TAG a href span(src=icon *=label div.id>)',0)
+    Traceback (most recent call last):
+      File "C:\Python27\lib\doctest.py", line 1315, in __run
+        compileflags, 1) in test.globs
+      File "<doctest __main__.compile[10]>", line 1, in <module>
+        equis = compile('(?#<TAG a href span(src=icon *=label div.id>)',0)
+      File "C:\\Users\\Alex Montes Barrios\\git\\addonDevelopment\\xbmc addon development\\src\\xbmcUI\\CustomRegEx.py", line 534, in compile
+        raise re.error(v)
+    error: unbalanced parenthesis
+    
     """
+    
     match = re.search('\(\?#<TAG (?P<tag>[a-zA-Z][a-zA-Z\d]*)(?P<vars>[^>]*>)\)',regexPattern)
     if not match: return re.compile(regexPattern, compFlags)
     
-    ATTR = r'(?P<ATTR>(?<= )[^\s]+(?==))'
-#     REQATTR = r'(?P<REQATTR>(?<= )(?:[a-zA-Z]|\*)[a-zA-Z\d]*(?=[ >]))'
-    REQATTR = r'(?P<REQATTR>(?<= )[^\s]+(?=[ >]))'
-    VAR = r'(?P<VAR>(?<==)[a-zA-Z][a-zA-Z\d]*(?=[ >]))'
-    PARAM = r'(?P<PARAM>(?<==)[\'\"][^\'\"]+[\'\"](?=[ >]))'
-    EQ = r'(?P<EQ>=)'
-    WS = r'(?P<WS>\s+)'
-    END = r'(?P<END>>)'
-    
+    ATTR        = r'(?P<ATTR>(?<=[\( ])[a-z\d\*\.\[\]]+(?==))'
+    REQATTR     = r'(?P<REQATTR>(?<=[\( ])[a-z\d\*\.\[\]]+(?=[ >\)]))'
+    VAR         = r'(?P<VAR>(?<==)[a-zA-Z][a-zA-Z\d]*(?=[ >\)]))'
+    PARAM       = r'(?P<PARAM>(?<==)[\'\"][^\'\"]+[\'\"](?=[ >=]))'
+    TAGSUFFIX   = r'(?P<TAGSUFFIX>(?<= )[a-z\d\*\.\[\]]+(?=\())'
+    OPENP       = r'(?P<OPENP>\()'
+    CLOSEP      = r'(?P<CLOSEP>\))'
+    EQ          = r'(?P<EQ>=)'
+    WS          = r'(?P<WS>\s+)'
+    END         = r'(?P<END>>)'
     
     rootTag = match.group('tag')
-    master_pat = re.compile('|'.join([ATTR, REQATTR, VAR, PARAM, EQ, WS, END]))
+    rootTagStck = [rootTag]
+    master_pat = re.compile('|'.join([TAGSUFFIX, ATTR, REQATTR, VAR, PARAM, OPENP, CLOSEP, EQ, WS, END]))
     scanner = master_pat.scanner(match.group('vars'))
     totLen = 0
+    varSet={}
     tags = {rootTag:{}}
     varList = []
     for m in iter(scanner.match, None):
@@ -469,17 +501,46 @@ def compile(regexPattern, compFlags):
         if m.lastgroup in ["ATTR", "REQATTR"]:
             pathKey, sep, attrKey = sGroup.rpartition(ATTRSEP)
             pathKey = rootTag + ATTRSEP + pathKey if pathKey else rootTag
+            tags.setdefault(pathKey, {})
             sGroup = ""
+            
         if m.lastgroup in ["ATTR", "WS", "EQ", 'END']: continue
-        if m.lastgroup == "VAR": 
+
+        if m.lastgroup == "TAGSUFFIX":
+            pathKey = sGroup
+            continue
+
+        if m.lastgroup == "OPENP":
+            rootTagStck.append(pathKey)
+            rootTag = '.'.join(rootTagStck)
+            continue
+
+        if m.lastgroup == "CLOSEP": 
+            rootTagStck.pop()
+            rootTag = '.'.join(rootTagStck)
+            continue
+        
+        if m.lastgroup == "VAR":
+            if sGroup in varSet:
+                v = 'redefinition of group name '+ sGroup + ' as group ' + str(len(varList) + 1) + '; was group ' + str(varSet[sGroup])
+                raise re.error(v)
             varList.append([pathKey + ATTRSEP + attrKey, sGroup])
+            varSet[sGroup] = len(varList)
             sGroup = ""
-        tagDict = tags.setdefault(pathKey, {})
+        tagDict = tags[pathKey]
+        if attrKey in tagDict and m.lastgroup != "VAR":
+            v = 'reasociation of attribute '+ pathKey + ATTRSEP + attrKey 
+            raise re.error(v)
         tagDict.setdefault(attrKey, '')
         if sGroup: tagDict[attrKey] = re.compile(sGroup[1:-1] + r'\Z')
-#         tagDict[attrKey] = sGroup[1:-1]
 
-    if totLen != len(match.group('vars')): re.compile(r'(') # Eleva exepci�n, se puede mejorar
+    if totLen == len(match.group('vars')) and len(rootTagStck) > 1:
+        v = 'unbalanced parenthesis'
+        raise re.error(v)
+        
+    if totLen != len(match.group('vars')): 
+        v = 'unable to process pattern from: ' + match.group('vars')[totLen:]
+        raise re.error(v)
 #     print '****'
 #     print regexPattern
 #     print tags
@@ -539,7 +600,11 @@ class ExtRegexParser:
                 fullAttr = tag + '.' + attr
                 if fullAttr in self.varDict:
                     k = self.varDict[fullAttr]
-                    self.varPos[k] = paramPos[attr]
+                    if reqAttr[attr] and reqAttr[attr].groups:
+                        m = reqAttr[attr].match(tagAttr[attr])
+                        self.varPos[k] = self.trnCoord(m.span(1), paramPos[attr][0])
+                    else:
+                        self.varPos[k] = paramPos[attr]
         
 
     def haveTagAllAttrReq(self, tag, tagAttr, reqTags = -1):
