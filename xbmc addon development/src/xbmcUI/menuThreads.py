@@ -46,6 +46,15 @@ class menuThreads:
     def isthreadLocked(self, threadId):
         params = self.getThreadAttr(threadId, 'params')
         return params.has_key('enabled')
+    
+    def unlockThread(self, threadId):
+        params = self.getThreadAttr(threadId, 'params')
+        if params.has_key('enabled'): params.pop('enabled')
+        
+    def lockThread(self, threadId):
+        params = self.getThreadAttr(threadId, 'params')
+        params['enabled']=False
+        
         
     def getThreadAttr(self, threadId, attrStr):
         if self.existsThread(threadId):

@@ -213,8 +213,8 @@ class treeExplorer(FilteredTree):
      
         addonTemplate.insert(0,addonTemplate.pop(0) + "/" + addonTemplate[0][0])
         return addonTemplate
-                 
-    def onTreeSelection(self, node):
+    
+    def onTreeSelection(self, node = None):
         nodeId = node or self.treeview.focus()
         prevActiveNode = self.setActiveNode(nodeId)
         if self.treeview.set(prevActiveNode, column = 'type') in ['file', 'depfile']:
@@ -234,6 +234,8 @@ class treeExplorer(FilteredTree):
             fileId = source                
             if editedFlag:
                 content = self.editedContent.pop(nodeId)
+                source = self._genFiles.getFileName(fileId)
+                fileExt = (os.path.splitext(source)[1]).lower()
             elif itype == 'genfile':
 #                 fileId = source
                 source = self._genFiles.getFileName(fileId)

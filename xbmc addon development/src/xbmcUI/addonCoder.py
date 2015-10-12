@@ -99,9 +99,9 @@ class CoderParser:
         if menuIcons:
             iconList = '["' + '", "'.join(menuIcons) + '"]'
             sourceCode += '\n\t' + 'iconList = ' + iconList
-            sourceCode += '\n\t' + 'kMax = min(len(subMenus), len(iconList))'
-            sourceCode += '\n\t' + 'for k in range(kMax):'
-            sourceCode += '\n\t\t' + 'subMenus[k]["iconImage"] = os.path.join(_media, iconList[k])'
+            sourceCode += '\n\t' + 'for k in range(len(subMenus)):'
+            sourceCode += '\n\t\t' + 'kmod = min(k, len(iconList) - 1)' 
+            sourceCode += '\n\t\t' + 'subMenus[k]["iconImage"] = os.path.join(_media, iconList[kmod])'
         
         contextMenuFlag = paramDict.has_key('contextmenus')
         if contextMenuFlag:
@@ -147,6 +147,7 @@ class CoderParser:
             nextregexp = paramDict.pop('nextregexp')
             footmenu = [elem.split("<->") for elem in nextregexp.split("<=>")]
             if len(footmenu) == 1 and len(footmenu[0]) == 1:
+                nextregexp = nextregexp.replace("'", "\\'")
                 sourceCode += '\n\t'+ 'footmenu = [[\'Next Page >>>\', \'' + nextregexp + '\']]'
             else:
                 sourceCode += '\n\t'+ 'footmenu = ' + str(footmenu)
@@ -567,13 +568,9 @@ class Addoncoder:
     def saveCode(self, content, isPartialMod = False):
         import re
         if not isPartialMod:
-#             for key in self.modSourceCode.keys():
-#                 if self.addonADG.existsThread(key):
-#                     params = self.addonADG.parseThreads[key]['params']
-#                     if params.has_key('enabled'): params.pop('enabled')
             self.modSourceCode = {}
-            if content.startswith(self.HEADER): content = '<header>' + content[len(self.HEADER):] 
-            if content.endswith(self.FOOTER): content = content[: -len(self.FOOTER)] + '<footer>'        
+            if not content.startswith('<header>') and content.startswith(self.HEADER): content = '<header>' + content[len(self.HEADER):] 
+            if not content.endswith('<footer>') and content.endswith(self.FOOTER): content = content[: -len(self.FOOTER)] + '<footer>'        
         pos = 0
         reg = re.compile('def (?P<name>[^\(]+?)\([^\)]*?\):(?:.+?)\n {4}return (?P<return>.+?)\n', re.DOTALL)
         while 1:

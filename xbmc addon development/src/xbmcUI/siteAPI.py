@@ -8,17 +8,18 @@ def rootmenu():
 def mmoviesStrm():
     menuContent = []
     menuContent.append([{u'url': u'http://www.free-tv-video-online.me/movies/', 'menu': u'AtoZ'}, {'isFolder': True, 'label': u'A-Z'}, None])
-    menuContent.append([{u'url': u'http://www.free-tv-video-online.me/movies/', 'menu': u'years'}, {'isFolder': True, 'label': u'years'}, None])
-    menuContent.append([{u'url': u'http://www.free-tv-video-online.me/movies/', 'menu': u'genre'}, {'isFolder': True, 'label': u'genre'}, None])
+    menuContent.append([{u'url': u'http://projectfreetv.so/movies/', 'menu': 'latest'}, {'isFolder': True, 'label': u'latest'}, None])
+    menuContent.append([{u'url': u'http://projectfreetv.so/movies/', 'menu': u'genre'}, {'isFolder': True, 'label': u'genre'}, None])
+    menuContent.append([{u'url': u'http://projectfreetv.so/movies/', 'menu': u'years'}, {'isFolder': True, 'label': u'years'}, None])
     return menuContent
 
 def tv_series():
     menuContent = []
-    menuContent.append([{u'url': u'http://projectfreetv.so/calendar/', 'menu': 'calendar'}, {'isFolder': True, 'label': u'calendar'}, None])
-    menuContent.append([{'url': 'http://projectfreetv.so/watch-tv-series/', 'menu': 'series_A_to_Z'}, {'isFolder': True, 'label': 'seasons'}, None])
+    menuContent.append([{u'url': u'http://projectfreetv.so/calendar/', 'menu': u'calendar'}, {'isFolder': True, 'label': u'calendar'}, None])
+    menuContent.append([{u'url': u'http://projectfreetv.so/watch-tv-series/', 'menu': u'series_A_Z'}, {'isFolder': True, 'label': u'series_A_Z'}, None])
     return menuContent
 
-def series_A_to_Z():
+def series_A_Z():
     url = args.get("url")[0]
     regexp = r'(?#<SPAN>)<h4 id="[^"]+">(?P<label>.+?)</h4>.+?</div>'
     url, data = openUrl(url)
@@ -30,7 +31,7 @@ def series_A_to_Z():
         itemParam["isFolder"] = True
         otherParam = {}
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-        paramDict.update({'menu': 'series_list'})
+        paramDict.update({'menu': u'series_list'})
         paramDict.update(elem)
         paramDict["url"] = url
         menuContent.append([paramDict, itemParam, otherParam])
@@ -49,7 +50,7 @@ def series_list():
         itemParam["isFolder"] = True
         otherParam = {}
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-        paramDict.update({'menu': 'seasons'})
+        paramDict.update({'menu': u'seasons'})
         paramDict.update(elem)
         menuContent.append([paramDict, itemParam, otherParam])
     return menuContent
@@ -66,7 +67,7 @@ def seasons():
         itemParam["isFolder"] = True
         otherParam = {}
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-        paramDict.update({'menu': 'episode_list'})
+        paramDict.update({'menu': u'episode_list'})
         paramDict.update(elem)
         menuContent.append([paramDict, itemParam, otherParam])
     return menuContent
@@ -83,7 +84,7 @@ def episode_list():
         itemParam["isFolder"] = True
         otherParam = {}
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-        paramDict.update({'menu': 'resolvers'})
+        paramDict.update({'menu': u'resolvers'})
         paramDict.update(elem)
         menuContent.append([paramDict, itemParam, otherParam])
     return menuContent
@@ -143,9 +144,9 @@ def AtoZ():
 
 def years():
     url = args.get("url")[0]
-    regexp = r'<a href="(?P<url>[0-9]{4}.*?)"><b>(?P<label>[0-9]{4}.*?)</b>'
+    regexp = r'<a .+?href="(?P<url>.+?\d{4})".+?<b>(?P<label>.+?)</b>'
     url, data = openUrl(url)
-    compflags = 0
+    compflags = re.IGNORECASE
     subMenus = parseUrlContent(url, data, regexp, compflags)
     menuContent = []
     for elem in subMenus:
@@ -153,14 +154,14 @@ def years():
         itemParam["isFolder"] = True
         otherParam = {}
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-        paramDict.update({u'menu': u'az'})
+        paramDict.update({u'menu': 'latest'})
         paramDict.update(elem)
         menuContent.append([paramDict, itemParam, otherParam])
     return menuContent
 
 def genre():
     url = args.get("url")[0]
-    regexp = r'<a class ="genre" href="(?P<url>/movies/genres/.+?.html)"><b>(?P<label>.+?)</b></a>'
+    regexp = r'<a .+?href="(?P<url>.+?/)".+?<b>(?P<label>.+?)</b>'
     url, data = openUrl(url)
     compflags = 0
     subMenus = parseUrlContent(url, data, regexp, compflags)
@@ -170,9 +171,29 @@ def genre():
         itemParam["isFolder"] = True
         otherParam = {}
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
-        paramDict.update({u'menu': u'az'})
+        paramDict.update({u'menu': 'latest'})
         paramDict.update(elem)
         menuContent.append([paramDict, itemParam, otherParam])
+    return menuContent
+
+def latest():
+    url = args.get("url")[0]
+    footmenu = [['Next Page >>>', '</span></li><li><a rel='nofollow' href='(?P<url>[^']+)' class='inactive'>(?P<label>[^<]+)</a>']]
+    if args.has_key("section"): url = processHeaderFooter(args.pop("section")[0], args, footmenu)
+    regexp = r'<div class="post excerpt ">\W+<a href="(?P<url>[^"]+)" title="(?P<label>[^"]+)".+?<img  src="(?P<iconImage>[^"]+)"'
+    url, data = openUrl(url)
+    compflags = re.DOTALL|re.IGNORECASE
+    subMenus = parseUrlContent(url, data, regexp, compflags)
+    menuContent = []
+    for elem in subMenus:
+        itemParam = dict([(key,elem.pop(key)) for key  in elem.keys() if key in LISTITEM_KEYS])
+        itemParam["isFolder"] = True
+        otherParam = {}
+        paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
+        paramDict.update({'menu': u'az'})
+        paramDict.update(elem)
+        menuContent.append([paramDict, itemParam, otherParam])
+    menuContent += getMenuHeaderFooter("footer", args, data, footmenu)
     return menuContent
 
 def az():
@@ -213,7 +234,7 @@ def movies():
 
 def resolvers():
     url = args.get("url")[0]
-    regexp = r'<td><a href="(?P<url>[^"]+)" target="_blank" rel="nofollow"><img src="(?P<thumbnailImage>[^"]+)" width="16" height="16">(?P<label>.+?)</a></td>'
+    regexp = r'<td><a href="(?P<url>[^"]+)" target="_blank" rel="nofollow"><img src="(?P<thumbnailImage>[^"]+)" width="16" height="16"> &nbsp;(?P<label>[^<]+)</a>'
     url, data = openUrl(url)
     compflags = re.DOTALL|re.IGNORECASE
     subMenus = parseUrlContent(url, data, regexp, compflags)

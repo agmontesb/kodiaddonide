@@ -321,9 +321,9 @@ class SintaxEditor(tk.Frame):
         
         prevIndx = "%s-1c" % tk.INSERT
         if textw.tag_names(prevIndx):
-            frstIndx = textw.tag_prevrange('sintaxTag', 'insert')[0] or '1.0'
+            frstIndx = (textw.tag_prevrange('sintaxTag', 'insert') or ('1.0',))[0]
             textw.tag_remove('sintaxTag', frstIndx)
-        frstIndx = textw.tag_prevrange('sintaxTag', 'insert')[0] if textw.index(tk.INSERT) != '1.0' else '1.0' 
+        frstIndx = (textw.tag_prevrange('sintaxTag', 'insert') or ('1.0',))[0] 
         self.formatContent(frstIndx, 'end')
         return "break"
     

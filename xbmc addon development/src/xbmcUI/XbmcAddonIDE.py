@@ -488,14 +488,25 @@ class XbmcAddonIDE(tk.Toplevel):
         if isinstance(rPane, SintaxEditor.CodeEditor):
             widget = self.codeFrame
             partialMod = True
-        elif isinstance(rPane, SintaxEditor.SintaxEditor):
-            widget = self.sintaxEditor
+        elif isinstance(rPane, addonFilesViewer):
+            widget = self.addonFilesViewer.sintaxEditor
             partialMod = False
         else:
             return
         modSource, contType, fileId = widget.getContent()
         if contType == 'genfile':
             self.fileGenerator.setSource(fileId, modSource, partialMod)
+            if not partialMod:
+                modSource = self.fileGenerator.getSource(fileId)
+                widget.setContent((modSource, contType, fileId), '1.0')
+            else:
+                match = re.search('\W*<([^>]+)>\W*', modSource)
+                if match:
+                    nodeId = match.group(1)
+                    if nodeId == self.xbmcThreads.threadDef and nodeId in self.coder.modSourceCode:
+                        self.coder.modSourceCode.pop(nodeId)
+                        self.xbmcThreads.unlockThread(nodeId)
+                self.codeFrame.initFrameExec()
             self.setSaveFlag(True)
         if contType == 'file':
             if os.path.splitext(fileId)[1] in ['.py', '.txt', '.xml']:
