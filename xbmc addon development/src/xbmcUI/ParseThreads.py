@@ -198,8 +198,9 @@ class RegexpBar(tk.Frame):
         content = self.textWidget.get(*selTag)
         pattern = self.getRegexpPattern()
         compflags = eval(self.getCompFlags())
-        fieldList = re.findall('\?P<([^>]+)>', pattern)
-        match = re.search(pattern, content, flags = compflags)
+        compPattern = CustomRegEx.compile(pattern, compflags)
+        fieldList = sorted(compPattern.groupindex.keys(), lambda x, y: compPattern.groupindex[x] - compPattern.groupindex[y])
+        match = compPattern.search(content)
         gDict = match.groupdict()
         matchStr = '   '.join([key + '=' + gDict.get(key,'') for key in fieldList])
         self.messageVar.set(matchStr)
@@ -521,6 +522,12 @@ class NavigationBar(tk.Frame):
             self.urlContent = data
 
     def openUrl(self, urlToOpen):
+        """
+        http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar&tipoMercado=1&diaFecha=09&mesFecha=10&anioFecha=2015&nemo=&filtroAcciones=2
+        <option\W+selected="selected"\W+value='(?P<grp1>[^']+)'>.+?</option>
+        
+        """
+        
     # 31-08-04
     #v1.0.0 
     
@@ -543,28 +550,18 @@ class NavigationBar(tk.Frame):
         cj = None
         cookielib = None
         
-        try:                                    # Let's see if cookielib is available
-            import cookielib            
-        except ImportError:
-            import urllib2
-            urlopen = urllib2.urlopen
-            Request = urllib2.Request
-        else:
-            import urllib2    
-            urlopen = urllib2.urlopen
-            cj = cookielib.LWPCookieJar()       # This is a subclass of FileCookieJar that has useful load and save methods
-            Request = urllib2.Request
+        import cookielib            
+        import urllib2    
+        cj = cookielib.LWPCookieJar()       # This is a subclass of FileCookieJar that has useful load and save methods
+        opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
         
         ####################################################
         # We've now imported the relevant library - whichever library is being used urlopen is bound to the right function for retrieving URLs
         # Request is bound to the right function for creating Request objects
         # Let's load the cookies, if they exist. 
             
-        if cj != None:                                  # now we have to install our CookieJar so that it is used as the default CookieProcessor in the default opener handler
-            if os.path.isfile(COOKIEFILE):
+        if cj != None and os.path.isfile(COOKIEFILE):                                  # now we have to install our CookieJar so that it is used as the default CookieProcessor in the default opener handler
                 cj.load(COOKIEFILE)
-            opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-            urllib2.install_opener(opener)
         
         REQUEST_HEADERS = [
             ["User-Agent" , "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"],
@@ -572,8 +569,7 @@ class NavigationBar(tk.Frame):
             ["Accept-Encoding","gzip,deflate,sdch"],
             ["Accept-Language" , "es-ES,es;q=0.8,en;q=0.6"],
             ["Cache-Control" , "max-age=0"],
-            ["Connection" , "keep-alive"],
-            ["Cookie" , "JSESSIONID=FB0417F4DE0E0ED245C58A1129C409A9.tomcatM1p6101"],
+            ["Connection" , "keep-alive"]
         ]
         
         referer = 'http://www.peliculaspepito.com/'
@@ -584,17 +580,12 @@ class NavigationBar(tk.Frame):
         sep = '<post>'
         urlToOpen, sep, postData = urlToOpen.partition(sep)
         
-        headers = {}
-        for elem in REQUEST_HEADERS:
-            headers[elem[0]] = elem[1]
-        if self.cookies and self.cookies.pop("url_referer") == urlToOpen:
-            headers["Cookie"] = urllib.urlencode(self.cookies) 
+        headers = dict(REQUEST_HEADERS)
         
         try:
-            req = Request(urlToOpen, postData or None, headers)            
-            url = urlopen(req)
+            req = urllib2.Request(urlToOpen, postData or None, headers)
+            url = opener.open(req)
         except Exception as e:
-#             tkMessageBox.showerror('URL not Found', urlToOpen)
             data = e
         else:
             self.activeUrl.set(self.unNormUrl(url.geturl()))
@@ -607,11 +598,7 @@ class NavigationBar(tk.Frame):
                 data = gzipper.read()
                 gzipper.close()
             url.close()
-            
-        if cj != None:
-            urlParse = urlparse.urlparse(urlToOpen)
-#             cj.save(COOKIEFILE, ignore_discard=True, ignore_expires=True)                     # save the cookies again
-            cj.save(COOKIEFILE)                     # save the cookies again                
+        if cj != None: cj.save(COOKIEFILE)                     # save the cookies again                
         return data
     
     def getReguestAndUrlOpen(self):
