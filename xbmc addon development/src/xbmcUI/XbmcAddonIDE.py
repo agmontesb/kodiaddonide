@@ -5,7 +5,7 @@ Created on 29/06/2014
 @author: Alex Montes Barrios
 '''
 from xbmcStubs import collapsingFrame
-from xbmcUI import KodiLog
+from xbmcUI import KodiLog, CustomRegEx
 
 """
     return [[{"url":"http://played.to/5jhkm0lq5xge", "menu":"media"}, {"isFolder": False, "label": "Relatos Salvajes"}, None]]
@@ -368,12 +368,27 @@ class XbmcAddonIDE(tk.Toplevel):
         self.makeMenu('Coding', menuOpt)
 
         menuOpt = []
-        menuOpt.append(('command', 'Regexp editor','Ctrl+R', 0, lambda key = '3':self.codeAddon(key)))
+        menuOpt.append(('command', 'HTML struct','Ctrl+R', 0, self.HTMLstruct))
         menuOpt.append(('separator',))        
         menuOpt.append(('command', 'Detach Window','Ctrl+R', 0, self.detachWindow))        
         menuOpt.append(('separator',))        
         menuOpt.append(('command', 'Setting','Ctrl+S', 0, self.programSettingDialog))
         self.makeMenu('Tools', menuOpt)
+        
+    def HTMLstruct(self):
+        tagSpan = self.regexpEd.getSelRange('actMatch')
+        content = self.regexpEd.getContent(*tagSpan)
+        try:
+            htmlParse = CustomRegEx.ExtRegexParser({}, []).htmlStruct(content, 0)
+        except:
+            equis = 'Not HTML conform'
+            tkMessageBox.showinfo('Actual match HTMLstruct', equis)
+        else:
+            fmt = '{:<20} {:<40}'.format
+#             equis = '\n'.join([fmt(x[0].count('.')*'  ' + '*' + x[0].rpartition('.')[2],x[1][:40]) for x in htmlParse])
+            equis = [fmt(x[0].count('.')*'  ' + '*' + x[0].rpartition('.')[2],x[1][:40]) for x in htmlParse]
+            from xbmcStubs.xbmcgui import Dialog
+            k = Dialog().select('Actual match HTMLstruct', equis)
         
     def detachWindow(self):
         actWin = self.activeViewIndx.get()

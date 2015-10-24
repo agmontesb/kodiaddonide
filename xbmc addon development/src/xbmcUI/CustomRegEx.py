@@ -74,9 +74,10 @@ class filteredStr:
         return (trnIni, trnFin)
 
 class ExtRegexObject:
-    def __init__(self, pattern, compflags, tags, varList):
+    def __init__(self, pattern, compflags, tagPattern, tags, varList):
         self.pattern = pattern
         self.flags = compflags
+        self.tagPattern = tagPattern
         self.tags = tags
         self.groupindex = {}
         for k, varTuple in enumerate(varList):
@@ -92,14 +93,14 @@ class ExtRegexObject:
         rootTag = self.tags.keys()[0].partition('.')[0]
         diffSet = set(self.tags.get(rootTag,{}).keys()).difference(['*'])
         if diffSet:
-            myfunc = lambda x: '<' + rootTag + '[^>]+' + '=[^>]+'.join(x) + '=[^>]+[/]*>'
+            myfunc = lambda x: '<' + self.tagPattern + '\s[^>]*' + '=[^>]+'.join(x) + '=[^>]+[/]*>'
             SRCHTAG =  '|'.join(map(myfunc, itertools.permutations(diffSet,len(diffSet))))
         else:
-            SRCHTAG = '<' + rootTag
+            SRCHTAG = '<' + self.tagPattern + '(?:\s|>)'
         master_pat = re.compile(SRCHTAG, re.DOTALL)
         posIni = pos
         while 1:
-            match = master_pat.search(origString[posIni:])
+            match = master_pat.search(origString[posIni:endpos])
             if not match: return None
             tagPos = match.start() + posIni
             if origString[posIni:tagPos].rfind('<!--') <= origString[posIni:tagPos].rfind('-->'): 
@@ -235,7 +236,7 @@ a {'href': '/\\Z'}
 
 """
 
-def compile(regexPattern, compFlags):
+def ExtCompile(regexPattern, compFlags):
     """
     tr : TAG buscado
     td.width : Atributo "width" buscado en td
@@ -262,10 +263,10 @@ def compile(regexPattern, compFlags):
     >>> equis = compile('(?#<TAG a href span.src=icon span.*=label div.id>)',0)
     >>> equis.tags
     {'a': {'href': ''}, 'a.div': {'id': ''}, 'a.span': {'src': '', '*': ''}}
-    >>> equis = compile('(?#<TAG a href span(src=icon *=label) div.id>)',0)
+    >>> equis = compile('(?#<TAG a href span{src=icon *=label} div.id>)',0)
     >>> equis.tags
     {'a': {'href': ''}, 'a.div': {'id': ''}, 'a.span': {'src': '', '*': ''}}
-    >>> equis = compile('(?#<TAG a href span(src=icon *=label div.id>)',0)
+    >>> equis = compile('(?#<TAG a href span{src=icon *=label div.id>}',0)
     Traceback (most recent call last):
       File "C:\Python27\lib\doctest.py", line 1315, in __run
         compileflags, 1) in test.globs
@@ -276,28 +277,43 @@ def compile(regexPattern, compFlags):
     error: unbalanced parenthesis
     
     """
+    def storeAttrVarPair(varName, attrName):
+        if attrName in attrSet:
+            v = 'reassigment of attribute '+ attrName + ' to var ' + varName + '; was var ' + attrSet[attrName] 
+            raise re.error(v)
+        if varName in varSet:
+            v = 'redefinition of group name '+ varName + ' as group ' + str(len(varList) + 1) + '; was group ' + str(varSet[varName])
+            raise re.error(v)
+        varList.append([attrName, varName])
+        attrSet[attrName] = varName
+        varSet[varName] = len(varList)
+        pass
     
-    match = re.search('\(\?#<TAG (?P<tag>[a-zA-Z][a-zA-Z\d]*)(?P<vars>[^>]*>)\)',regexPattern)
+#     match = re.search('\(\?#<(?P<tagpattern>[a-zA-Z][a-zA-Z\d]*)(?P<vars>[^>]*>)\)',regexPattern)
+    match = re.search('\(\?#<(?P<tagpattern>[a-zA-Z]\S*|_TAG_)(?P<vars>[^>]*>)\)',regexPattern)
     if not match: return re.compile(regexPattern, compFlags)
     
-    ATTR        = r'(?P<ATTR>(?<=[\( ])[a-z\d\*\.\[\]_-]+(?==))'
-    REQATTR     = r'(?P<REQATTR>(?<=[\( ])[a-z\d\*\.\[\]_-]+(?=[ >\)]))'
-    VAR         = r'(?P<VAR>(?<==)[a-zA-Z][a-zA-Z\d]*(?=[ >\)]))'
-    STRPVAR     = r'(?P<STRPVAR>(?<==)&[a-zA-Z][a-zA-Z\d]*&(?=[ >\)]))'
+    ATTR        = r'(?P<ATTR>(?<=[{ ])\(*[a-z\d\*\.\[\]_-]+\)*(?==))'
+    REQATTR     = r'(?P<REQATTR>(?<=[{ ])\(*[a-z\d\*\.\[\]_-]+\)*(?=[ >\)]))'
+    VAR         = r'(?P<VAR>(?<==)[a-zA-Z][a-zA-Z\d]*(?=[ >}]))'
+    STRPVAR     = r'(?P<STRPVAR>(?<==)&[a-zA-Z][a-zA-Z\d]*&(?=[ >}]))'
     PARAM       = r'(?P<PARAM>(?<==)[\'\"][^\'\"]+[\'\"](?=[ >=]))'
-    TAGSUFFIX   = r'(?P<TAGSUFFIX>(?<= )[a-z\d\*\.\[\]]+(?=\())'
-    OPENP       = r'(?P<OPENP>\()'
-    CLOSEP      = r'(?P<CLOSEP>\))'
+    TAGSUFFIX   = r'(?P<TAGSUFFIX>(?<=[ {])[a-z\d\*\.\[\]]+(?={))'
+    OPENP       = r'(?P<OPENP>{)'
+    CLOSEP      = r'(?P<CLOSEP>})'
     EQ          = r'(?P<EQ>=)'
     WS          = r'(?P<WS>\s+)'
     END         = r'(?P<END>>)'
     
-    rootTag = match.group('tag')
+    tagPattern = match.group('tagpattern')
+    if tagPattern == '_TAG_': tagPattern = '[a-zA-Z][^\s>]*'
+    rootTag = "tagpholder"
     rootTagStck = [rootTag]
     master_pat = re.compile('|'.join([TAGSUFFIX, ATTR, REQATTR, VAR, STRPVAR, PARAM, OPENP, CLOSEP, EQ, WS, END]))
     scanner = master_pat.scanner(match.group('vars'))
     totLen = 0
     varSet={}
+    attrSet = {}
     tags = {rootTag:{}}
     varList = []
     for m in iter(scanner.match, None):
@@ -305,6 +321,16 @@ def compile(regexPattern, compFlags):
         totLen += len(sGroup) 
 #         print m.lastgroup, m.group()
         if m.lastgroup in ["ATTR", "REQATTR"]:
+            if sGroup[0] == "(" and sGroup[-1] == ")":
+                sGroup = sGroup[1:-1]
+                varName = "group" + str(1 + len(varList))
+#                 varList.append([, varName])
+                attrName = rootTag + ATTRSEP + sGroup
+                storeAttrVarPair(varName, attrName)
+                pass
+            elif (sGroup[0] == "(" and sGroup[-1] != ")") or (sGroup[0] != "(" and sGroup[-1] == ")"):
+                v = 'unbalanced parenthesis'
+                raise re.error(v)
             pathKey, sep, attrKey = sGroup.rpartition(ATTRSEP)
             pathKey = rootTag + ATTRSEP + pathKey if pathKey else rootTag
             tags.setdefault(pathKey, {})
@@ -328,11 +354,8 @@ def compile(regexPattern, compFlags):
         
         if m.lastgroup in ["VAR", "STRPVAR"]:
             varName = sGroup if m.lastgroup == "VAR" else sGroup[1:-1]
-            if varName in varSet:
-                v = 'redefinition of group name '+ varName + ' as group ' + str(len(varList) + 1) + '; was group ' + str(varSet[varName])
-                raise re.error(v)
-            varList.append([pathKey + ATTRSEP + attrKey, varName])
-            varSet[varName] = len(varList)
+            attrName = pathKey + ATTRSEP + attrKey
+            storeAttrVarPair(varName, attrName)
             sGroup = "" if m.lastgroup == "VAR" else " \s*([ \S]*?)\s* "
         tagDict = tags[pathKey]
         if attrKey in tagDict and m.lastgroup != "VAR":
@@ -355,7 +378,81 @@ def compile(regexPattern, compFlags):
 #     for tag in tags:
 #         if not any(tags[tag].values()):continue
 #         print tag, dict((key, value.pattern) for key, value in tags[tag].items() if value)
-    return ExtRegexObject(regexPattern, compFlags, tags, varList)
+    return ExtRegexObject(regexPattern, compFlags, tagPattern, tags, varList)
+
+class zinwrapper(ExtRegexObject):
+    def __init__(self, pattern, compflags, spanRegexObj, srchRegexObj):
+        try:
+            tagPattern, tags, varList = srchRegexObj.tagPattern, srchRegexObj.tags, srchRegexObj.varList
+        except:
+            tagPattern, tags, varList = "", {}, []
+
+        ExtRegexObject.__init__(self, pattern, compflags,tagPattern, tags, varList) 
+        self.spanRegexObj = spanRegexObj
+        self.srchRegexObj = srchRegexObj
+        self.spanDelim = None
+        self.matchParams = None 
+        pass
+    
+    def findSpan(self, string, posIni, posFin):
+        offset = posIni
+        if isinstance(self.spanRegexObj, ExtRegexObject):
+            string = string[posIni:posFin]
+            posIni = offset + re.match(GENTAG, string).end()
+            posFin = offset + re.search(ENDTAG+'\Z', string).start()
+            return posIni, posFin
+        else:
+            return match.span()
+
+    def delimiter(self, string, pos, endpos):
+        if endpos == -1: endpos = len(string)
+        if self.spanDelim == None:
+            srchFunc = getattr(self.spanRegexObj, 'search')
+            match = srchFunc(string, pos, endpos)
+            if not match: return None
+            self.spanDelim = self.findSpan(string, *match.span())
+            self.matchParams = match.groupdict()
+            return self.spanDelim
+        limInf, limSup = self.spanDelim
+        if limInf <= pos < limSup:
+            return pos, min(limSup, endpos)
+        self.spanDelim = None
+        return self.delimiter(string, pos, endpos)
+
+    def search(self, string, pos = 0, endpos = -1):
+        spanDelim = self.delimiter(string, pos, endpos)
+        if not spanDelim: return None
+        posIni, posFin = spanDelim
+        srchFunc = getattr(self.srchRegexObj, 'search')
+        match = srchFunc(string, posIni, posFin)
+        if match: return match
+        self.spanDelim = None
+        return self.search(string, posFin, endpos) 
+    
+#     def match(self, string, pos = 0, endpos = -1):
+#         pass
+#     
+#     def findall(self, string, pos = 0, endpos = -1):
+#         pass
+#     
+#     def finditer(self, string, pos = 0, endpos = -1):
+#         pass
+#     
+#     def __getattr__(self, attrname):
+#         return getattr(self.srchRegexObj, attrname)
+    
+
+
+
+def compile(regexPattern, compFlags):  
+    spanRegexObj, srchRegexObj = regexPattern.rpartition('<ZIN>')[0:3:2]
+    srchRegexObj = ExtCompile(srchRegexObj, compFlags)
+    if not spanRegexObj: return srchRegexObj
+    spanRegexObj = ExtCompile(spanRegexObj, compFlags)
+    return zinwrapper(regexPattern, compFlags, spanRegexObj, srchRegexObj)
+    
+
+
 
 
 class ExtRegexParser:
@@ -376,18 +473,19 @@ class ExtRegexParser:
     
     def checkStartTag(self, data):
         tag = re.match(r'<([a-zA-Z\d]+)[\W >]', data).group(1)
-        if tag not in self.reqTags:return True
-        reqTags = dict(self.reqTags[tag])
+#         if tag not in self.reqTags:return True
+        if 'tagpholder' not in self.reqTags:return True
+        reqTags = dict(self.reqTags['tagpholder'])
         if '*' in reqTags: reqTags.pop('*')
         tagAttr = self.getAttrDict(data, 0)
-        return self.haveTagAllAttrReq(tag, tagAttr, reqTags)
+        return self.haveTagAllAttrReq('tagpholder', tagAttr, reqTags)
 
     def initParse(self, data, posIni):
         if not self.checkStartTag(data): return None
         tagList = self.feed(data)
         if not tagList: return None
         reqSet = set(self.reqTags.keys())        
-        toProcess = self.setPathTag(tagList, reqSet)
+        toProcess = self.setPathTag(tagList, reqSet = reqSet)
         if reqSet: return None
 
         self.varPos[0] = tagList[0][0]
@@ -400,8 +498,9 @@ class ExtRegexParser:
         pass
     
     def htmlStruct(self, data, posIni):
+        tagName = re.match(r'<([a-zA-Z\d]+)[\W >]', data).group(1)
         tagList = self.feed(data)
-        self.setPathTag(tagList)
+        self.setPathTag(tagList, rootName = tagName)
         answer = []
         for elem in tagList:
             tagPos, tagId = elem[:2]
@@ -443,7 +542,7 @@ class ExtRegexParser:
             tagAttr['*ParamPos*']['*'] = tagList[n][0]
         return tagAttr
     
-    def setPathTag(self, tagList, reqSet = -1):
+    def setPathTag(self, tagList, rootName = 'tagpholder', reqSet = -1):
         dadList = [-1]
         no_reqSetFlag = reqSet == -1
         for k in xrange(len(tagList) - 1):
@@ -458,9 +557,13 @@ class ExtRegexParser:
         packPath = lambda x, n:tagList[0][1] + '.' + '..'.join(x.partition('.')[2].split('.')[0:n:n-1])
         pathDict = {}
         toProcess = []
+        tagList[0][1] = rootName
         if not no_reqSetFlag:
             if tagList[0][1] in reqSet:toProcess.append(0)
             reqSet.difference_update([tagList[0][1]])
+            relPath = sorted([x for x in reqSet if x.find('..') != -1], cmp = lambda x,y: y.count('.') - x.count('.')) 
+            efe = lambda x: not (pathTag.startswith(x.split('..')[0]) and pathTag.endswith(x.split('..')[1]))
+            
         for k in xrange(1,len(tagList)):
             indx = dadList[k]
             pathTag = tagList[indx][1] + '.' + tagList[k][1]
@@ -468,21 +571,23 @@ class ExtRegexParser:
             if pathDict[pathTag] > 1: pathTag += '[' + str(pathDict[pathTag]) + ']'
             tagList[k][1] = pathTag
             if no_reqSetFlag:continue
-            packedPath = pathTag if pathTag.count('.') < 3 else packPath(pathTag, pathTag.count('.'))
+#             packedPath = pathTag if pathTag.count('.') < 3 else packPath(pathTag, pathTag.count('.'))
             if pathTag in reqSet:
                 reqSet.difference_update([pathTag])
                 toProcess.append(k)
-            elif pathTag != packedPath and packedPath in reqSet:
-                reqSet.difference_update([packedPath])
-                toProcess.append(-k)
+            elif relPath:
+                rpos = list(itertools.takewhile(efe, relPath))
+                rpos = len(rpos) + 1
+                if rpos <= len(relPath):
+                    toProcess.append((k, relPath[rpos - 1]))
+                    reqSet.difference_update([relPath.pop(rpos - 1)])
             if not reqSet: break
         if no_reqSetFlag: return None
         for k in range(len(toProcess)):
             m = toProcess[k]
-            if m >= 0 : continue
-            toProcess[k] = -m
-            pathTag = tagList[-m][1]
-            tagList[-m][1] = packPath(pathTag, pathTag.count('.'))
+            if isinstance(m, int):continue
+            toProcess[k] = m[0]
+            tagList[m[0]][1] = m[1]
         return toProcess
     
     def getAttrDict(self, data, offset):
@@ -509,6 +614,10 @@ class ExtRegexParser:
         pass
 
     def feed(self, data):
+        tag = re.match(r'<([a-zA-Z\d]+).+?(>|/>)', data, re.DOTALL)
+        if tag.group(2) == '>':
+            pattern = '</' + tag.group(1) + '>'
+            if not re.search(pattern, data): data = tag.group()
         scanner = self.master_pat.scanner(data)
         totLen = 0
         tagStack = []
@@ -555,10 +664,10 @@ class ExtRegexParser:
                 continue
                 pass
         if totLen != len(data): raise Exception
-        while tagStack:
-            stckTag, stckTagSpan = tagStack.pop()
-            tagList.append([stckTagSpan, stckTag, None])
-        return sorted(tagList)
+        if tagStack:
+            stckTag, stckTagSpan = tagStack[0]
+            tagList = [[stckTagSpan, stckTag, None]]
+        return tagList
         pass
 
     
@@ -668,7 +777,36 @@ if __name__ == "__main__":
 #   
 
     print '******* BEG ********' 
-    testing = "doctest"    
+    testing = "<ZIN>"
+
+    if testing == "<ZIN>":
+        with open(r'c:/fileTest/extRegExTest.txt', 'r') as origF:
+            equis = origF.read()
+            
+#         testPattern = compile('(?#<ul class="links">)<ZIN>(?#<a title=label href=url>)', 0)
+        testPattern = compile('<ul class="links">.+?</ul><ZIN><a title="(?P<label>[^"]+)" href="(?P<url>[^"]+)">.+?</a>', re.DOTALL)
+#         testPattern = compile('<ul class="links">.+?</ul><ZIN>(?#<a title=label href=url>)', re.DOTALL)                                
+        pos = 0
+        for k in range(59):        
+            match = testPattern.search(equis, pos)
+            print match.group()
+            print match.groupdict()
+            print match.span()
+            pos = match.end()
+        match = testPattern.search(equis, pos)
+        print match.group()
+        print match.groupdict()
+        print match.span()
+
+        pos = 0
+        testPattern = compile('(?#<div class="tagindex" h4.*="A">)<ZIN><a title="(?P<label>[^"]+)" href="(?P<url>[^"]+)">.+?</a>', re.DOTALL)
+        print '****   finditer   ****'
+        for match in testPattern.finditer(equis, pos):
+            print match.group()
+            
+        pos = 0
+        import pprint
+        pprint.pprint(testPattern.findall(equis, pos))
 
     if testing == "doctest":
         import doctest

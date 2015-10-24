@@ -195,14 +195,9 @@ class RegexpBar(tk.Frame):
 
 
     def actMatch(self, selTag):
-        content = self.textWidget.get(*selTag)
-        pattern = self.getRegexpPattern()
-        compflags = eval(self.getCompFlags())
-        compPattern = CustomRegEx.compile(pattern, compflags)
-        fieldList = sorted(compPattern.groupindex.keys(), lambda x, y: compPattern.groupindex[x] - compPattern.groupindex[y])
-        match = compPattern.search(content)
-        gDict = match.groupdict()
-        matchStr = '   '.join([key + '=' + gDict.get(key,'') for key in fieldList])
+        gDict = self.tree.set(selTag)
+        cname = self.tree.heading
+        matchStr = '   '.join([cname(key, option="text") + '=' + gDict[key] for key in sorted(gDict.keys())])
         self.messageVar.set(matchStr)
 
     def getRegexpPattern(self):
@@ -268,12 +263,15 @@ class RegexpBar(tk.Frame):
         self.textWidget.tag_remove('actMatch', '1.0', 'end')
         self.textWidget.tag_add('actMatch', *selTag)
         self.textWidget.mark_set('insert', selTag[0])
-        self.textWidget.see(selTag[1 if nextMatch else 0])            
+#         self.textWidget.see(selTag[1 if nextMatch else 0])
+        self.textWidget.see(selTag[0])                        
         self.matchLabel.config(text=matchStr, bg = 'SystemButtonFace')
+        selTag = self.tree.get_children()[nPos - 1]
+        self.tree.see(selTag)
+        self.tree.selection_set(selTag)
+
         self.actMatch(selTag)
 
-        self.tree.see(self.tree.get_children()[nPos - 1])
-        self.tree.selection_set(self.tree.get_children()[nPos - 1])
 
         
     def getPatternMatch(self, *dummy):
@@ -1181,8 +1179,6 @@ class RegexpFrame(tk.Frame):
             
     def setPopUpMenu(self, popUpMenu):
         self.popUpMenu = popUpMenu
-        
-        
 
     def getMatchTag(self, nextMatch = True):
         seekFunc = self.txtEditor.textw.tag_nextrange if nextMatch else self.txtEditor.textw.tag_prevrange
@@ -1233,8 +1229,8 @@ class RegexpFrame(tk.Frame):
         if textw == self.txtEditor.textw and event.keysym not in  ['Left', 'Right', 'Up','Down','Next','Prior','Button-1']:
             return "break"
 
-    def getSelRange(self):
-        return self.txtEditor.getSelRange()
+    def getSelRange(self, tagName = 'sel'):
+        return self.txtEditor.getSelRange(tagName)
 
     def setContent(self, data, newUrl = True):
         if newUrl: self.regexpFrame.setZoomType('ZoomIn')
