@@ -13,9 +13,11 @@ import urllib2
 import base64
 
 import re
+import CustomRegEx
 import urlparse
 import xml.dom.minidom as minidom
 import HTMLParser
+import CustomRegEx
 
 LISTITEM_KEYS   = ["label",           #string or unicode (Casino Royale)
                    "label2",          #string or unicode ([PG-13])  
@@ -77,7 +79,7 @@ def openUrl(urlToOpen, validate = False):
         data = None
     else:
         data = url.read()
-        charset = re.search('charset(?:=|="|=\')([^"\' >]+)', data)
+        charset = CustomRegEx.search('charset(?:=|="|=\')([^"\' >]+)', data)
         charset = charset.group(1) if charset else 'utf-8'
         data = data.decode(charset, 'replace')
         toReturn = url.geturl() if validate else (url.geturl(), data) 
@@ -85,7 +87,7 @@ def openUrl(urlToOpen, validate = False):
     return toReturn
 
 def getParseDirectives(regexp):
-    rawDir = re.findall(r'\?#<([^>]+)>', regexp)
+    rawDir = CustomRegEx.findall(r'\?#<([^>]+)>', regexp)
     fltrDir = {}
     for rawkey in rawDir:
         key = rawkey.upper().strip('0123456789')
@@ -99,7 +101,7 @@ def parseUrlContent(url, data, regexp, compFlags = None, posIni = 0, posFin = 0)
     parseDirect = getParseDirectives(regexp)
     nxtposini = parseDirect.get('NXTPOSINI', 0)
     compFlags = compFlags if compFlags else 0
-    pattern = re.compile(regexp, flags = compFlags)
+    pattern = CustomRegEx.compile(regexp, flags = compFlags)
     matchs = []
     while 1:
         match = pattern.search(data, posIni)
@@ -186,11 +188,11 @@ def getMenuHeaderFooter(param, args, data, menus):
         opdefault = opdefault if sep else ''
         pIni, pFin = 0, -1
         if opdefault.startswith('(?#<SPAN>)'):
-            pIni, match = -1, re.search(opdefault, data)
+            pIni, match = -1, CustomRegEx.search(opdefault, data)
             if match: pIni, pFin = match.span(0)
-        opmenu = re.findall(opvalues, data[pIni:pFin])
+        opmenu = CustomRegEx.findall(opvalues, data[pIni:pFin])
         if not opmenu: continue
-        tags = re.findall(r'\?P<([^>]+)>', opvalues)
+        tags = CustomRegEx.findall(r'\?P<([^>]+)>', opvalues)
         if 'url' in tags:
             menuUrl = [elem[tags.index('url')] for elem in opmenu] if len(tags) > 1 else opmenu
         if 'label' in tags:
@@ -203,8 +205,8 @@ def getMenuHeaderFooter(param, args, data, menus):
             varValue = [elem[tags.index('varvalue')] for elem in opmenu] if len(tags) > 1 else opmenu
 
         if opdefault:
-            tags = re.findall(r'\?P<([^>]+)>', opdefault)
-            match =re.search(opdefault, data)
+            tags = CustomRegEx.findall(r'\?P<([^>]+)>', opdefault)
+            match =CustomRegEx.search(opdefault, data)
             if tags:
                 if 'label' in tags:
                     opdefault = htmlUnescape(match.group(1) if match else '')
@@ -247,18 +249,18 @@ def getMenuHeaderFooterOLD(param, args, data, menus):
         opdefault = opdefault if sep else ''
         pIni, pFin = 0, -1
         if opdefault.startswith('(?#<SPAN>)'):
-            pIni, match = -1, re.search(opdefault, data)
+            pIni, match = -1, CustomRegEx.search(opdefault, data)
             if match: pIni, pFin = match.span(0)
-        opmenu = re.findall(opvalues, data[pIni:pFin])
+        opmenu = CustomRegEx.findall(opvalues, data[pIni:pFin])
         if not opmenu: continue
-        tags = re.findall(r'\?P<([^>]+)>', opvalues)
+        tags = CustomRegEx.findall(r'\?P<([^>]+)>', opvalues)
         menuUrl = [elem[tags.index('url')] for elem in opmenu] if len(tags) > 1 else opmenu
         if 'label' in tags:
             menuLabel = map(htmlUnescape, [elem[tags.index('label')] for elem in opmenu])
         else:
             menuLabel = len(menuUrl) * ['Label placeholder']
         if opdefault:
-            match = re.search(opdefault, data)
+            match = CustomRegEx.search(opdefault, data)
             opdefault = htmlUnescape(match.group(1) if match else '')
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
         paramDict.update({'section':param, 'url':url, param:k, 'menu':menuId, 'menulabel': str(menuLabel), 'menuurl':str(menuUrl)})      

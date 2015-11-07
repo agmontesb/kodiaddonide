@@ -54,8 +54,9 @@ class RegexpBar(tk.Frame):
     def onTreeSel(self,event):
         selId = self.tree.selection()[0]
         if selId and selId != self.tree.get_children()[self.actMatchIndx - 1]:
-            nVar = len(self.tree['displaycolumns']) - 2
-            insPos = self.tree.set(selId, column = 'var' + str(nVar))
+#             nVar = len(self.tree['displaycolumns']) - 2
+#             insPos = self.tree.set(selId, column = 'var' + str(nVar))
+            insPos = self.tree.set(selId, column = 'posINI')
             self.textWidget.mark_set('insert', '1.0 + ' + str(int(insPos) - 1) + ' chars')
             self.getMatchTag(nextMatch = True)
 
@@ -303,17 +304,22 @@ class RegexpBar(tk.Frame):
         self.removeTags('1.0', 'end')
         
         yesCompFlag = len(regexPattern) > 0
-        try:
-            reg = CustomRegEx.compile(regexPattern, compFlags)
-        except:
-            yesCompFlag = False
-
         if not yesCompFlag:
             matchLabel.config(text = '', bg = 'SystemButtonFace')
             return None
-        
+
+        try:
+            reg = CustomRegEx.compile(regexPattern, compFlags)
+        except Exception as inst:
+            self.messageVar.set(str(inst))
+            matchLabel.config(text = 'Error', bg = 'SystemButtonFace')
+            return None
+        else:
+            self.messageVar.set('')
+            if not reg: return None
+
         tags = sorted(reg.groupindex.keys(), lambda x, y: reg.groupindex[x] - reg.groupindex[y])
-        tags += ['PosINI', 'PosFIN']
+        tags = ['PosINI', 'PosFIN'] + tags
         self.tree['displaycolumns']= [ k for k in range(len(tags))]
         for k, colName in enumerate(tags):            
             self.tree.heading(k, text = colName)
@@ -381,9 +387,15 @@ class RegexpBar(tk.Frame):
                 self.setTag(matchColor, baseIndex, match, 0)
                 self.setTag('matchTag', baseIndex, match, 0)                    
 
-                nCols = len(self.tree['displaycolumns']) - 2
-                tags = [self.tree.heading(elem, option='text') for elem in range(nCols)]
-                tagValues = [match.groupdict()[elem].strip('\r\n') for elem in tags] + [match.start(0), match.end(0)]
+                nCols = min(len(self.tree['columns']) - 2, len(match.groupdict().keys()))
+                if nCols > len(self.tree['displaycolumns']) - 2:
+                    tags = ['group' + str(ka + 1) for ka in range(nCols)]
+                    tags = ['PosINI', 'PosFIN'] + tags
+                    self.tree['displaycolumns']= [ ka for ka in range(nCols + 2)]
+                    for ka, colName in enumerate(tags):            
+                        self.tree.heading(ka, text = colName)
+                tagValues = [match.start(0), match.end(0)] + [match.group(ka + 1).strip('\r\n') for ka in range(nCols)]
+                tagValues = tagValues + (len(self.tree['columns']) - len(tagValues))*['']                
                 self.tree.insert('', 'end', values = tagValues)     #Por revisar
                 
                 if k > 1:
@@ -523,7 +535,7 @@ class NavigationBar(tk.Frame):
         """
         http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar&tipoMercado=1&diaFecha=09&mesFecha=10&anioFecha=2015&nemo=&filtroAcciones=2
         <option\W+selected="selected"\W+value='(?P<grp1>[^']+)'>.+?</option>
-        
+        (?#<button class="yt-uix-button yt-uix-button-size-default yt-uix-button-default yt-uix-button-has-icon" .span<.*>*>)
         """
         
     # 31-08-04
@@ -1139,7 +1151,7 @@ class RegexpFrame(tk.Frame):
         frame2 = collapsingFrame.collapsingFrame(self, buttConf = 'mRM')
         frame2.pack(fill = tk.BOTH, expand = 1)
         self.txtEditor = PythonEditor(frame2.frstWidget)
-        self.tree = ttk.Treeview(frame2.scndWidget, displaycolumns = '#all', show = 'headings', columns = ('var0','var1','var2','var3','var4','var5','var6','var7'))
+        self.tree = ttk.Treeview(frame2.scndWidget, displaycolumns = '#all', show = 'headings', columns = ('posINI', 'posFIN', 'var0','var1','var2','var3','var4','var5'))
         self.tree.pack(side = tk.LEFT, fill = tk.BOTH, expand = 1)
         
         self.txtEditor.setKeyHandler(self) 

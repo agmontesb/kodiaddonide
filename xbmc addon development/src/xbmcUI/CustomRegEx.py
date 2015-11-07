@@ -74,9 +74,9 @@ class filteredStr:
         return (trnIni, trnFin)
 
 class ExtRegexObject:
-    def __init__(self, pattern, compflags, tagPattern, tags, varList):
+    def __init__(self, pattern, flags, tagPattern, tags, varList):
         self.pattern = pattern
-        self.flags = compflags
+        self.flags = flags
         self.tagPattern = tagPattern
         self.tags = tags
         self.groupindex = {}
@@ -107,6 +107,10 @@ class ExtRegexObject:
                 varPos = findTag.initParse(origString[tagPos:], tagPos)
                 if varPos: break
             posIni = match.end() + posIni
+
+        if self.varList and 'tagpholder..*' in self.varList[0][0]:
+            self.groups = len(varPos) - 1
+            self.groupindex = dict(('grp%s' % k, k) for k in xrange(1,len(varPos))) 
         return ExtMatchObject(self, origString, spos, sendpos, varPos)            
 
     def match(self, string, pos = -1, endpos = -1):
@@ -152,12 +156,13 @@ class ExtMatchObject:
         self.enpos = endpos
         self.lastindex = 0
         self.lastgroup = 0
+        self.groupindex = dict.copy(regexObject.groupindex)
         self.re = regexObject
         self.string = htmlstring
         self.varpos = varPos
     
     def _varIndex(self, x):
-        nPos = self.re.groupindex[x] if isinstance(x, basestring) else int(x)
+        nPos = self.groupindex[x] if isinstance(x, basestring) else int(x)
         if nPos > len(self.varpos): raise Exception
         return nPos
     
@@ -176,7 +181,7 @@ class ExtMatchObject:
         return tuple(self.string[tpl[0]:tpl[1]] for tpl in self.varpos[1:])
     
     def groupdict(self, default = None):
-        keys = sorted(self.re.groupindex.keys(), lambda x, y: self.re.groupindex[x] - self.re.groupindex[y])
+        keys = sorted(self.groupindex.keys(), lambda x, y: self.groupindex[x] - self.groupindex[y])
         values = self.groups()
         return dict(zip(keys, values))
     
@@ -236,7 +241,7 @@ a {'href': '/\\Z'}
 
 """
 
-def ExtCompile(regexPattern, compFlags):
+def ExtCompile(regexPattern, flags):
     """
     tr : TAG buscado
     td.width : Atributo "width" buscado en td
@@ -291,14 +296,14 @@ def ExtCompile(regexPattern, compFlags):
     
 #     match = re.search('\(\?#<(?P<tagpattern>[a-zA-Z][a-zA-Z\d]*)(?P<vars>[^>]*>)\)',regexPattern)
     match = re.search('\(\?#<(?P<tagpattern>[a-zA-Z]\S*|_TAG_)(?P<vars>[^>]*>)\)',regexPattern)
-    if not match: return re.compile(regexPattern, compFlags)
+    if not match: return re.compile(regexPattern, flags)
     
-    ATTR        = r'(?P<ATTR>(?<=[{ ])\(*[a-z\d\*\.\[\]_-]+\)*(?==))'
-    REQATTR     = r'(?P<REQATTR>(?<=[{ ])\(*[a-z\d\*\.\[\]_-]+\)*(?=[ >\)]))'
+    ATTR        = r'(?P<ATTR>(?<=[{ ])\(*[a-zA-Z\d\*\.\[\]_-]+\)*(?==))'
+    REQATTR     = r'(?P<REQATTR>(?<=[{ ])\(*[a-zA-Z\d\*\.\[\]_-]+\)*(?=[ >\)]))'
     VAR         = r'(?P<VAR>(?<==)[a-zA-Z][a-zA-Z\d]*(?=[ >}]))'
     STRPVAR     = r'(?P<STRPVAR>(?<==)&[a-zA-Z][a-zA-Z\d]*&(?=[ >}]))'
     PARAM       = r'(?P<PARAM>(?<==)[\'\"][^\'\"]+[\'\"](?=[ >=]))'
-    TAGSUFFIX   = r'(?P<TAGSUFFIX>(?<=[ {])[a-z\d\*\.\[\]]+(?={))'
+    TAGSUFFIX   = r'(?P<TAGSUFFIX>(?<=[ {])[a-zA-Z\d\*\.\[\]]+(?={))'
     OPENP       = r'(?P<OPENP>{)'
     CLOSEP      = r'(?P<CLOSEP>})'
     EQ          = r'(?P<EQ>=)'
@@ -323,8 +328,10 @@ def ExtCompile(regexPattern, compFlags):
         if m.lastgroup in ["ATTR", "REQATTR"]:
             if sGroup[0] == "(" and sGroup[-1] == ")":
                 sGroup = sGroup[1:-1]
+                if sGroup[0] == '.' and '.' not in sGroup[1:]:
+                    v = 'Included tags not allowed as variables'
+                    raise re.error(v)
                 varName = "group" + str(1 + len(varList))
-#                 varList.append([, varName])
                 attrName = rootTag + ATTRSEP + sGroup
                 storeAttrVarPair(varName, attrName)
                 pass
@@ -332,7 +339,13 @@ def ExtCompile(regexPattern, compFlags):
                 v = 'unbalanced parenthesis'
                 raise re.error(v)
             pathKey, sep, attrKey = sGroup.rpartition(ATTRSEP)
-            pathKey = rootTag + ATTRSEP + pathKey if pathKey else rootTag
+            if not pathKey and sep:
+                pathKey = rootTag + 2*ATTRSEP + attrKey
+                attrKey = ''
+                tags.setdefault(pathKey, {})
+                continue
+            pathKey = rootTag + sep + pathKey
+            pathKey = re.sub(r'[.](\d+)(?=[.]*)', r'[\1]', pathKey).replace('[1]', '')
             tags.setdefault(pathKey, {})
             sGroup = ""
             
@@ -358,6 +371,9 @@ def ExtCompile(regexPattern, compFlags):
             storeAttrVarPair(varName, attrName)
             sGroup = "" if m.lastgroup == "VAR" else " \s*([ \S]*?)\s* "
         tagDict = tags[pathKey]
+        if not attrKey:
+            v = 'Included tags not allowed as variables' 
+            raise re.error(v)
         if attrKey in tagDict and m.lastgroup != "VAR":
             v = 'reasociation of attribute '+ pathKey + ATTRSEP + attrKey 
             raise re.error(v)
@@ -371,6 +387,15 @@ def ExtCompile(regexPattern, compFlags):
     if totLen != len(match.group('vars')): 
         v = 'unable to process pattern from: ' + match.group('vars')[totLen:]
         raise re.error(v)
+    
+    if 'tagpholder..*' in tags:
+        if not varList:
+            tags.pop('tagpholder..*')
+            varList.append(['tagpholder..*', 'group'])
+        else:
+            v = 'With required Tag ".*", var are not allowed'
+            raise re.error(v)
+    
 #     print '****'
 #     print regexPattern
 #     print tags
@@ -378,18 +403,26 @@ def ExtCompile(regexPattern, compFlags):
 #     for tag in tags:
 #         if not any(tags[tag].values()):continue
 #         print tag, dict((key, value.pattern) for key, value in tags[tag].items() if value)
-    return ExtRegexObject(regexPattern, compFlags, tagPattern, tags, varList)
+    return ExtRegexObject(regexPattern, flags, tagPattern, tags, varList)
 
 class zinwrapper(ExtRegexObject):
-    def __init__(self, pattern, compflags, spanRegexObj, srchRegexObj):
+    def __init__(self, pattern, flags, spanRegexObj, srchRegexObj, zone = 'zin'):
+        """
+        zone indica la zona de [posINI:posFIN] en que se limitara la búsqueda de
+        srchRegexObj, con relación a la zona [pos:endpos] de spanRegexObj. Sera:
+             zin      --> para zona [pos:endpos] 
+             zoutr    --> para zona [endpos:posFIN]
+             zoutl    --> para zona [posINI:pos]
+        """
         try:
             tagPattern, tags, varList = srchRegexObj.tagPattern, srchRegexObj.tags, srchRegexObj.varList
         except:
             tagPattern, tags, varList = "", {}, []
 
-        ExtRegexObject.__init__(self, pattern, compflags,tagPattern, tags, varList) 
+        ExtRegexObject.__init__(self, pattern, flags,tagPattern, tags, varList) 
         self.spanRegexObj = spanRegexObj
         self.srchRegexObj = srchRegexObj
+        self.zone = zone
         self.spanDelim = None
         self.matchParams = None 
         pass
@@ -400,9 +433,9 @@ class zinwrapper(ExtRegexObject):
             string = string[posIni:posFin]
             posIni = offset + re.match(GENTAG, string).end()
             posFin = offset + re.search(ENDTAG+'\Z', string).start()
-            return posIni, posFin
-        else:
-            return match.span()
+        return posIni, posFin
+#         else:
+#             return re.match().span()
 
     def delimiter(self, string, pos, endpos):
         if endpos == -1: endpos = len(string)
@@ -410,14 +443,24 @@ class zinwrapper(ExtRegexObject):
             srchFunc = getattr(self.spanRegexObj, 'search')
             match = srchFunc(string, pos, endpos)
             if not match: return None
-            self.spanDelim = self.findSpan(string, *match.span())
             self.matchParams = match.groupdict()
-            return self.spanDelim
+            if self.zone == 'zin':
+                self.spanDelim = self.findSpan(string, *match.span())
+                answ = self.spanDelim
+            elif self.zone == 'zoutr':
+                self.spanDelim = match.span()
+                answ = ExtCompile('(?#<_TAG_>)', 0)
+                answ = answ.search(string, match.end(), endpos)
+                answ = answ.span()
+            elif self.zone == 'zoutl':
+                self.spanDelim = match.span()                
+                answ = pos, match.start()
+            return answ
         limInf, limSup = self.spanDelim
         if limInf <= pos < limSup:
             return pos, min(limSup, endpos)
         self.spanDelim = None
-        return self.delimiter(string, pos, endpos)
+        return self.delimiter(string, limSup, endpos)
 
     def search(self, string, pos = 0, endpos = -1):
         spanDelim = self.delimiter(string, pos, endpos)
@@ -426,30 +469,95 @@ class zinwrapper(ExtRegexObject):
         srchFunc = getattr(self.srchRegexObj, 'search')
         match = srchFunc(string, posIni, posFin)
         if match: return match
-        self.spanDelim = None
+        posFin = self.spanDelim[1]
         return self.search(string, posFin, endpos) 
-    
-#     def match(self, string, pos = 0, endpos = -1):
-#         pass
-#     
-#     def findall(self, string, pos = 0, endpos = -1):
-#         pass
-#     
-#     def finditer(self, string, pos = 0, endpos = -1):
-#         pass
-#     
-#     def __getattr__(self, attrname):
-#         return getattr(self.srchRegexObj, attrname)
-    
+
+
+def compile(regexPattern, flags=0, debug = 0):
+    BEG         = r'(?#'
+    END         = r')'
+    ZIN         = r'<<>>'
+    NXTTAG      = r'<><>'
+    CHILDREN    = r'<<>*>'
+    PARENT      = r'<*<>>'
+    SIBLING     = r'<>*<>'
+    TAG         = r'<>'
+#     REGEX       = r'(?P<REGEX>.+?)'
+    zone = 'zin'
+    patterns = re.split(r'[<>][<>*]*', regexPattern)
+    if not (patterns[0].startswith(BEG) and patterns[-1].endswith(END)): return re.compile(regexPattern, flags)
+    patterns = patterns[1:-1]
+    tags = re.findall(r'[<>][<>*]*', regexPattern)
+    if len(tags) <= 1 or tags[0] not in ['<', '<*<']: return None
+    token = ''.join(tags)
+    if token == TAG: return ExtCompile(regexPattern, flags)
+    patt1 = BEG + '<' + patterns[0] + '>' + END
+    if token == ZIN:
+        patt2 = patterns[-1] if tags[-1] == '>' else ''
+        patt2 = BEG + '<' + patt2 + '>' + END
+        zone = 0 if tags[1] == '<' else patterns[1]
+    elif token == CHILDREN:
+        chldpat = '|'.join(re.findall(r'(?<= )[.]([a-z\d_-]+)(?=[ >])', patt1))
+        chldpat = chldpat or '_TAG_' 
+        patt2 = patterns[-1] if tags[-1] == '>*>' else ''
+        patt2 = BEG + '<' + chldpat + ' ' + patt2 + '>' + END
+    elif token == NXTTAG:
+        patt2 = patterns[-1] if tags[-1] == '>' else ''
+        patt2 = BEG + '<_TAG_ ' + patt2 + '>' + END
+        zone = 'zoutr'
+    elif token in [PARENT, SIBLING]:
+        raise re.error(token + ' not yet implemented')
+        pass
+    else:
+        return None
+
+    if debug: return regexPattern, flags, patt1, patt2, zone
+    srchRegexObj = ExtCompile(patt2, flags)
+    if not patt1: return srchRegexObj
+    spanRegexObj = ExtCompile(patt1, flags)
+    return zinwrapper(regexPattern, flags, spanRegexObj, srchRegexObj, zone)
 
 
 
-def compile(regexPattern, compFlags):  
-    spanRegexObj, srchRegexObj = regexPattern.rpartition('<ZIN>')[0:3:2]
-    srchRegexObj = ExtCompile(srchRegexObj, compFlags)
-    if not spanRegexObj: return srchRegexObj
-    spanRegexObj = ExtCompile(spanRegexObj, compFlags)
-    return zinwrapper(regexPattern, compFlags, spanRegexObj, srchRegexObj)
+
+def compileOLD(regexPattern, flags=0, debug=0):
+    ZIN         = r'(?P<ZIN>(.+?)<ZIN>(.*))'
+    NXTTAG      = r'(?P<NXTTAG>\(\?#<(.+?)><(.*?)>\))\Z'
+    CHILDREN    = r'(?P<CHILDREN>\(\?#<([^>]+)<(.*?)>>\))\Z'
+    PARENT      = r'(?P<PARENT>\(\?#<<(.+?)>(.*?)>\))\Z'
+    TAG         = r'(?P<TAG>\(\?#<.+?>\))\Z'
+    REGEX       = r'(?P<REGEX>.+?)'
+    zone = 'zin'
+    master_pat = re.compile('|'.join([ZIN, PARENT, CHILDREN, NXTTAG, TAG, REGEX]))
+    scanner = master_pat.scanner(regexPattern)
+    for m in iter(scanner.match, None):
+        k = m.lastindex
+        if      m.lastgroup == 'REGEX':
+            return re.compile(regexPattern, flags)
+        elif    m.lastgroup == 'TAG':
+            return ExtCompile(regexPattern, flags)
+        elif    m.lastgroup == 'ZIN':
+            patt1 = m.group(k+1)
+            patt2 = m.group(k+2)
+        elif    m.lastgroup == 'CHILDREN':
+            patt1 = '(?#<' + m.group(k+1) + '>)'
+            chldpat = '|'.join(re.findall(r'(?<= )[.]([a-z\d_-]+)(?=[ >])', patt1))
+            chldpat = chldpat or '_TAG_' 
+            patt2 = '(?#<' + chldpat + ' ' + m.group(k+2) + '>)'
+        elif    m.lastgroup == 'NXTTAG':
+            patt1 = '(?#<' + m.group(k+1) + '>)'
+            patt2 = '(?#<_TAG_ ' + m.group(k+2) + '>)'
+            zone = 'zoutr'
+        else:
+            continue
+#         print patt1, patt2
+
+    print "debug = ", debug
+    if debug: return regexPattern, flags, patt1, patt2, zone
+    srchRegexObj = ExtCompile(patt2, flags)
+    if not patt1: return srchRegexObj
+    spanRegexObj = ExtCompile(patt1, flags)
+    return zinwrapper(regexPattern, flags, spanRegexObj, srchRegexObj, zone)
     
 
 
@@ -467,7 +575,6 @@ class ExtRegexParser:
             key = tagTple[0]
             self.varDict[key] = k + 1
         self.varPos = (len(varList) + 1) * [0]
-        
         self.totLen = 0
         pass
     
@@ -487,13 +594,17 @@ class ExtRegexParser:
         reqSet = set(self.reqTags.keys())        
         toProcess = self.setPathTag(tagList, reqSet = reqSet)
         if reqSet: return None
-
-        self.varPos[0] = tagList[0][0]
-        for k in toProcess:
-            tag = tagList[k][1]
-            tagAttr = self.getAllTagData(k, data, tagList)
-            if not self.haveTagAllAttrReq(tag, tagAttr): return None
-            self.storeReqVars(tag, tagAttr, self.reqTags[tag])
+        if 'tagpholder..*' in self.varDict:
+            self.varPos = [tagList[0][0]]
+            self.varPos.extend([texto[0] for texto in tagList if texto[1][-1] == '*'])
+            self.varDict = dict(('grp%s' % k, k) for k in xrange(1,len(self.varPos))) 
+        else:
+            self.varPos[0] = tagList[0][0]
+            for k in toProcess:
+                tag = tagList[k][1]
+                tagAttr = self.getAllTagData(k, data, tagList)
+                if not self.haveTagAllAttrReq(tag, tagAttr): return None
+                self.storeReqVars(tag, tagAttr, self.reqTags[tag])
         return [self.trnCoord(elem, posIni) for elem in self.varPos]
         pass
     
@@ -554,7 +665,7 @@ class ExtRegexParser:
                     break
                 k = dadList[k]
                     
-        packPath = lambda x, n:tagList[0][1] + '.' + '..'.join(x.partition('.')[2].split('.')[0:n:n-1])
+#         packPath = lambda x, n:tagList[0][1] + '.' + '..'.join(x.partition('.')[2].split('.')[0:n:n-1])
         pathDict = {}
         toProcess = []
         tagList[0][1] = rootName
@@ -590,7 +701,39 @@ class ExtRegexParser:
             tagList[m[0]][1] = m[1]
         return toProcess
     
-    def getAttrDict(self, data, offset):
+    def getAttrDict(self, data , offset = 0):
+        '''
+        Tiene el error de partir en los = pero algunos atributos tienen ese caracter dentro de ellos
+        '''
+        pini = 0
+        pfin = data.find('>') + 1
+        tag = data[pini:pfin].strip('<>/') + " END "
+        key = '**name**'
+        attrD = {}
+        attrPos = {}
+        toSrch = ' '
+        while 1:
+            pfin = tag.find(toSrch, pini)
+            attrValue = tag[pini:pfin].strip(' \t\n\r\f\v')
+            attrD[key] = attrValue
+            attrPos[key] = (pini + offset + 1, pini + offset + 1 + len(attrValue))
+            toSrch = "="
+            pini = pfin + 1
+            pfin = tag.find(toSrch, pini)
+            key = tag[pini:pfin].strip(' \t\n\r\f\v')
+            if pfin == -1: break
+            if tag[pfin + 1] in r'\'"': 
+                pfin += 1
+                toSrch = tag[pfin]
+            else:
+                toSrch = ' '
+            pini = pfin + 1
+        attrD.pop('**name**')
+        attrPos.pop('**name**')
+        attrD['*ParamPos*'] = attrPos
+        return attrD
+    
+    def getAttrDictOLD(self, data, offset):
         """
         Recibe    : '<tag parameters>' o <tag parameters/>
         Entrega   : Dictionary con parameters value and en *ParamPos* diccionario de posiciones
@@ -669,6 +812,104 @@ class ExtRegexParser:
             tagList = [[stckTagSpan, stckTag, None]]
         return tagList
         pass
+    
+"""
+    Esta función NameAndAttrib debe probarse contra el método existente
+"""    
+
+
+def NewNameAndAttrib(data , offset = 0):
+    tag = data.strip('<>/') + " END "
+    pini = 0
+    key = '**name**'
+    attrD = {}
+    attrPos = {}
+    toSrch = ' '
+    while 1:
+        pfin = tag.find(toSrch, pini)
+        attrValue = tag[pini:pfin].rstrip(' \t\n\r\f\v')
+        attrD[key] = attrValue
+        attrPos[key] = (pini + offset + 1, pini + offset + 1 + len(attrValue))
+        toSrch = "="
+        pini = pfin + 1
+        pfin = tag.find(toSrch, pini)
+        key = tag[pini:pfin].rstrip(' \t\n\r\f\v')
+        if pfin == -1: break
+        if tag[pfin + 1] in r'\'"': 
+            pfin += 1
+            toSrch = tag[pfin]
+        else:
+            toSrch = ' '
+        pini = pfin + 1
+    attrD.pop('**name**')
+    attrPos.pop('**name**')
+    attrD['*ParamPos*'] = attrPos
+    return attrD
+
+
+
+
+def GenNameAndAttrib(tag , offset = 0):
+    tag = tag.strip('<>/') + " END "
+    pini = 0
+    key = '**name**'
+    attrD = {}
+    attrPos = {}
+    while 1:
+        pfin = tag.find('=', pini)
+        attrValue, keyValue = tag[pini:pfin].rpartition(' ')[0:3:2]
+        attrValue = attrValue.rstrip(' \t\n\r\f\v')
+        if attrValue[0] in '"\'': 
+            attrValue = attrValue[1:-1]
+            pini += 1
+        attrD[key] = attrValue
+        attrPos[key] = (pini + offset + 1, pini + offset + 1 + len(attrValue))
+        if pfin == -1: break
+        key = keyValue
+        pini = pfin + 1
+    name = attrD.pop('**name**')
+    attrPos.pop('**name**')
+    attrD['*ParamPos*'] = attrPos
+    return name, attrD
+
+from collections import OrderedDict
+def NameAndAttrib(tag , offset = 0):
+    efe = lambda k:reduce(lambda x,y:x+y,ltok[:k],0)
+    tag1 = tag.strip('<>/') + " END"
+    ans = []
+    map(ans.extend, [elem.rpartition(' ')[0:3:2] for elem in tag1.split('=')])
+    ltok = [len(x) + int(k>0) for k,x in enumerate(ans)]
+    mtok = [efe(k) for k in range(len(ltok))]
+    name = ans[0].strip(' \t\n\r\f\v')
+    attrD = OrderedDict((ans[k].strip(' \t\n\r\f\v'), ans[k+1].strip(' \t\n\r\f\v').strip('\'"')) for k in range(1,len(ans)-1,2))
+    params = {}
+    for k in range(len(attrD.keys())):
+        key, value = attrD.items()[k]
+        m = 2*(1 + k)
+        pattr = tag1.find(value, *mtok[m:m+2]) +  offset + 1
+        params[key] = (pattr, pattr + len(attrD[key]))
+    attrD['*ParamPos*'] = params 
+    return name, attrD
+    
+def getAttrDict(data, offset = 0):
+    """
+    Recibe    : '<tag parameters>' o <tag parameters/>
+    Entrega   : Dictionary con parameters value and en *ParamPos* diccionario de posiciones
+     
+    """
+    ATTR_PARAM = r'(?P<ATTR>(?<=\W)[^\s]+(?==))=([\"\'])(?P<PARAM>(?<==[\"\']).*?)\2(?=[\W>])'
+    match = re.match(r'<([a-zA-Z\d]+)(.+?)[/]*>', data, re.DOTALL)
+    if not match: return {'*ParamPos*':{}}
+    offset += match.start(2) - 1
+    data = ' ' + match.group(2) + ' '
+    mgList = list(re.finditer(ATTR_PARAM, data, re.DOTALL)) 
+    mgDict = dict((mg.group("ATTR"), mg.group("PARAM")) for mg in mgList)
+#     mgDict['*ParamPos*'] = dict((mg.group("ATTR"), self.trnCoord(mg.span("PARAM"), offset)) for mg in mgList)
+    mgDict['*ParamPos*'] = dict((mg.group("ATTR"), (mg.start("PARAM") + offset, mg.end("PARAM") + offset )) for mg in mgList)
+    return match.group(1), mgDict
+
+
+
 
     
 if __name__ == "__main__":
@@ -777,7 +1018,49 @@ if __name__ == "__main__":
 #   
 
     print '******* BEG ********' 
-    testing = "<ZIN>"
+    testing = ""
+    
+    tag = '''<input\n style="color: #232323;width:240px;height:40px;vertical-align:top;font-size:20px;text-align:center;margin:3px;font-weight:bold;" type="button" onclick="location.href='http://vodlocker.com/btdpwtrta55v'" value="Click Here to Download"/>'''
+    print GenNameAndAttrib(tag)
+    print GenNameAndAttrib('<table>')
+    print GenNameAndAttrib('<table seguro=esto/>')
+
+    if testing == "tagAttrTiming":
+    
+        setupStrBase ="""
+from xbmcUI.CustomRegEx import NewNameAndAttrib, getAttrDict
+tag = '<button class="yt-uix-button yt-uix-button-size-default yt-uix-button-default yt-uix-button-has-icon" type="button" onclick=";return false;" id="yt-picker-language-button" data-picker-key="language" data-picker-position="footer" data-button-action="yt.www.picker.load" data-button-menu-id="arrow-display" data-button-toggle="true">'
+"""
+        execName = """
+name2, dict2 = NewNameAndAttrib(tag)
+#print name2, dict2
+"""
+
+        execGet = """
+name2, dict2 = getAttrDict(tag)
+#print name2, dict2
+"""
+
+
+        import timeit
+        testResults = [['NewNameAndAttrib '], 
+                       ['getAttrDict'],
+                       ['Cociente    ']]
+        
+        
+        t = timeit.Timer(execName, setupStrBase)
+        testResults[0].extend(t.repeat(10,10000)) 
+
+        print '****'
+
+        t = timeit.Timer(execGet, setupStrBase)
+        testResults[1].extend(t.repeat(10,10000)) 
+
+        testResults[2].extend([testResults[0][k]/testResults[1][k] for k in range(1,len(testResults[0]))])
+        
+        for k in range(len(testResults[0])):
+            print testResults[0][k], testResults[1][k], testResults[2][k] 
+
 
     if testing == "<ZIN>":
         with open(r'c:/fileTest/extRegExTest.txt', 'r') as origF:
