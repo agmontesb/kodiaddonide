@@ -11,6 +11,7 @@ def enum(*sequential, **named):
     return type('Enum', (), enums)
 
 ntype = enum('ROOT', 'NOTIMPLEMENTED', 'ONECHILD', 'MENU', 'APIMENU', 'JOIN', 'MULTIPLEXOR','APICATEGORY', 'PAGE', 'SEARCH', 'MEDIA')
+import CustomRegEx
 
 class CoderParser:
     def __init__(self):
@@ -57,17 +58,20 @@ class CoderParser:
         if menuIcons: 
             iconList = '["' + '", "'.join(menuIcons) + '"]'
             sourceCode += INDENT + 'iconList = ' + iconList
-            sourceCode += INDENT + 'for k, icon in enumerate(iconList):'
-            sourceCode += INDENT + '\t' + 'menuContent[k][1]["iconImage"] = os.path.join(_media, icon)'
+            sourceCode += INDENT + 'for k, elem in enumerate(menuContent):'
+            sourceCode += INDENT + '\t' + 'icon = iconList[min(k, len(iconList))]'
+            sourceCode += INDENT + '\t' + 'elem[1]["iconImage"] = os.path.join(_media, icon)'
         sourceCode += INDENT + 'return menuContent' 
         return sourceCode
 
 
     def handle_apimenu(self, nodeId, menuId, paramDict, menuIcons, searchFlag, spanFlag):
-        import re
         from basicFunc import INFOLABELS_KEYS
+        addonInfoFlag = paramDict.has_key('regexp') 
+        if addonInfoFlag: regexp = paramDict.pop('regexp')
         INDENT = '\n\t'        
         sourceCode = 'def ' + nodeId + '():'
+        if regexp.find('?#<PASS>') != -1: sourceCode += '\n\t'+ 'global args'
         if paramDict.get('url', None):paramDict.pop('url')
         sourceCode += '\n\t'+ 'url = args.get("url")[0]'
         suffix = ')'
@@ -76,9 +80,7 @@ class CoderParser:
                 sourceCode += '\n\t'+ 'limInf, limSup = eval(args.get("span", ["(0,0)"])[0])'
                 suffix = ', posIni = limInf, posFin = limSup)'
         spanFlag = False
-        addonInfoFlag = paramDict.has_key('regexp') 
         if addonInfoFlag:
-            regexp = paramDict.pop('regexp')
             spanFlag = regexp.find('?#<SPAN') != -1 
             regexp = regexp.replace("'", "\\'")    
             sep = "'"
@@ -89,10 +91,12 @@ class CoderParser:
                 sourceCode += '\n\t'+ 'subMenus = parseUrlContent(url, data, regexp, compflags' + suffix
             else:
                 sourceCode += '\n\t'+ 'subMenus = parseUrlContent(url, data, regexp' + suffix
-            addonInfoFlag = any(map(lambda x: x in INFOLABELS_KEYS, re.findall('\?P<([^>]+)>', regexp)))
+            tags = CustomRegEx.compile(regexp).groupindex.keys()
+            addonInfoFlag = any(map(lambda x: x in INFOLABELS_KEYS, tags))
             
-        if spanFlag and regexp.find('?P<') == -1:
-            sourceCode += '\n\t'+ "args['span'] = [str(subMenus[0]['span'])]"
+        if regexp.find('?#<PASS>') != -1:
+            sourceCode += '\n\t'+ "args = dict((key, [value]) for key, value in subMenus[0].items())"
+#             if spanFlag: sourceCode += '\n\t'+ "args['span'] = [str(subMenus[0]['span'])]"
             sourceCode += '\n\t'+ "return " +  str(paramDict['menu']) + "()"
             return sourceCode
 
@@ -120,7 +124,10 @@ class CoderParser:
             sourceCode += '\n\t\t'+ 'otherParam["contextMenu"] = dict(contextMenu)'
         if addonInfoFlag:
             sourceCode += '\n\t\t'+ 'otherParam["addonInfo"] = dict([(key,elem.pop(key)) for key  in elem.keys() if key in INFOLABELS_KEYS])'
-        sourceCode += '\n\t\t'+ 'paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])'            
+        if regexp.find('videoUrl') == -1:
+            sourceCode += '\n\t\t'+ 'paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])'
+        else:
+            sourceCode += '\n\t\t'+ 'paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["url", "header", "footer"]])'
         sourceCode += '\n\t\t'+ 'paramDict.update(' + str({ key:value for key, value in paramDict.items() if key not in ['header','headregexp','nextregexp', 'iconflag', 'iconimage']}) + ')'
 #         sourceCode += '\n\t\t'+ 'paramDict = ' + str({ key:value for key, value in paramDict.items() if key not in ['nextregexp', 'iconflag', 'iconimage']})
         sourceCode += '\n\t\t'+ 'paramDict.update(elem)'
@@ -174,6 +181,7 @@ class CoderParser:
         return sourceCode
 
     def handle_media(self, keySet, regexp, compflags):
+        tags = CustomRegEx.compile(regexp).groupindex.keys()
         INDENT = '\n\t'
         mediacode  = 'def media():'
         mediacode += INDENT + 'import urlresolver'
@@ -188,10 +196,10 @@ class CoderParser:
             mediacode += INDENT + 'url, data = openUrl(url)'
             mediacode += INDENT + 'compflags ='  + compflags
             mediacode += INDENT + 'subMenus = parseUrlContent(url, data, regexp, compflags )'
-            if '(?P<videourl>' in regexp:
+            if 'videourl' in tags:
                 mediacode += INDENT + 'videoUrl = subMenus[0]["videourl"]'
                 mediacode += INDENT + 'url = urlresolver.HostedMediaFile(url = videoUrl).resolve()'
-            elif '(?P<videoUrl>' in regexp:
+            elif 'videoUrl' in tags:
                 mediacode += INDENT + 'url = subMenus[0]["videoUrl"]'
         if 'videoUrl' in keySet:
             INDENT = '\n\t'
@@ -474,33 +482,18 @@ class Addoncoder:
         menuIcons = None
         if self.addonADG.getThreadParam(threadId, 'iconflag'):
             params = self.addonADG.getThreadAttr(threadId, 'params')
-            iconList = [icon.strip() for icon in params['iconimage'].split(',')]
-            kMax = min(len(menuElem), len(iconList))
-            if kMax != len(menuElem): self.ERRORS += '\n' + 'WARNING: in ' + threadId + ' not enough icons were provided'
-            menuIcons = iconList[:kMax]
+            menuIcons = [icon.strip() for icon in params['iconimage'].split(',')]
         return self.parser.handle(ntype.MENU, threadId, menuElem, menuIcons)
     
     def getMediaCode(self):
         keyValues = set(['url', 'videoUrl', 'videoId'])
-        def getRegexKey(regexp, keySet):
-            posFin = 0
-            while True:
-                posIni = regexp.find('(?P<', posFin)
-                if posIni == -1: break
-                posIni += len('(?P<')
-                posFin = regexp.find('>', posIni)
-                if posFin == -1: break
-                keySet.add(regexp[posIni:posFin])
-            return keySet.intersection(keyValues)
-                
         lista = [(elem, self.addonADG.getThreadParam(elem, 'regexp')) for elem in self.addonADG.getChildren('media') if self.addonADG.getThreadAttr(elem, 'type') == 'thread']
         keySet = set()
         for elem in lista:
-            keyElem = getRegexKey(elem[1], set())
-            if keyElem:
-                keySet.update(keyElem)
-            else:
-                self.ERRORS += 'ERROR: ' + elem[0] + ' not send any of ' + str(keyValues) + ' to media'  + '\n'
+            cmpregex = CustomRegEx.compile(elem[1])
+            regexvars = keyValues.intersection(cmpregex.groupindex.keys())
+            keySet.update(regexvars)
+        if not keySet: self.ERRORS += 'WARNING: Sources not send any of ' + str(keyValues) + ' to media'  + '\n'
             
         regexp = self.addonADG.getThreadParam('media', 'regexp')
         compflags = self.addonADG.getThreadParam('media', 'compflags')

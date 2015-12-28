@@ -1,5 +1,6 @@
 eclipse.preferences.version=1
 encoding//src/test/Test_CustomRegex.py=utf-8
+encoding//src/test/Test_teleresolvers.py=UTF-8
 encoding//src/xbmcStubs/KodiFrontEnd.py=utf-8
 encoding//src/xbmcStubs/KodiProgram.py=utf-8
 encoding//src/xbmcStubs/beginToSeeAddon.py=utf-8
@@ -13,4 +14,6 @@ encoding//src/xbmcUI/XbmcAddonIDE.py=utf-8
 encoding//src/xbmcUI/basicFunc.py=utf-8
 encoding//src/xbmcUI/codeToTest.py=utf-8
 encoding//src/xbmcUI/menuThreads.py=utf-8
+encoding//src/xbmcUI/network.py=utf-8
 encoding//src/xbmcUI/sesame.py=utf8
+encoding//src/xbmcUI/teleresolvers.py=UTF-8

@@ -478,7 +478,8 @@ class settOptionList(baseWidget):
         lista = self.tree.get_children('')
         self.tree.delete(*lista)
         if value == '':return
-        bDatos = [map(lambda x: x.strip(),record.split(',')) for record in value.split('|')]
+        maxCol = len(self.columnsId) - 1
+        bDatos = [map(lambda x: x.strip(),record.split(',', maxCol)) for record in value.split('|')]
         for record in bDatos:
             self.tree.insert('', 'end', text='', values=record)
 
@@ -626,7 +627,9 @@ class settSep(tk.Frame):
                 
     def setGUI(self, options):
         if options.get('type', None) == 'lsep': tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        tk.Frame(self, relief=tk.RIDGE, height=2, bg="red").pack(side = tk.RIGHT, fill = tk.X, expand = 1)                
+        if not options.has_key('noline'):
+            color = options.get('color', 'red')
+            tk.Frame(self, relief=tk.RIDGE, height=2, bg=color).pack(side = tk.RIGHT, fill = tk.X, expand = 1)                
 
     def getSettingPair(self):
         return (None, None)
@@ -1082,7 +1085,7 @@ class settSliderOLD(tk.Frame):
 
 
 class AppSettingDialog(tk.Toplevel):
-    def __init__(self, master, xmlSettingFile, settings = None, title = None, dheight = 600, dwidth = 500):
+    def __init__(self, master, xmlSettingFile, isFile = True, settings = None, title = None, dheight = 600, dwidth = 500):
         tk.Toplevel.__init__(self, master)
         self.resizable(False, False)
         self.transient(master)
@@ -1095,8 +1098,10 @@ class AppSettingDialog(tk.Toplevel):
         self.settings = settings or {}
         self.result = dict(self.settings)
         self.applySelected = False
-        
-        self.root = ET.parse(xmlSettingFile).getroot()
+        if isFile:
+            self.root = ET.parse(xmlSettingFile).getroot()
+        else:
+            self.root = ET.fromstring(xmlSettingFile)
         self.initial_focus = self.setGUI(body)
 
         self.grab_set()

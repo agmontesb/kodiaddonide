@@ -15,7 +15,7 @@ import tkFont
 import urllib
 import urllib2
 import httplib
-import tkMessageBox
+import socket
 import urlparse
 import re
 import CustomRegEx
@@ -24,11 +24,13 @@ import xml.etree.ElementTree as ET
 import time
 import addonCoder
 from likeXbmc import translatePath
-from OptionsWnd import scrolledFrame
+from OptionsWnd import scrolledFrame, AppSettingDialog
 from urllib import urlencode
 
 
 "a simple customizable scrolled listbox component"
+
+import tkFileDialog
 
 class RegexpBar(tk.Frame):
     def __init__(self, master, messageVar):
@@ -420,6 +422,15 @@ class RegexpBar(tk.Frame):
 
 
 class NavigationBar(tk.Frame):
+    DEF_REQUEST_HEADERS = [
+        ["User-Agent" , "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"],
+        ["Accept","text/html, application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"],
+        ["Accept-Encoding","gzip,deflate,sdch"],
+        ["Accept-Language" , "es-ES,es;q=0.8,en;q=0.6"],
+        ["Cache-Control" , "max-age=0"],
+        ["Connection" , "keep-alive"]
+    ]
+    
     def __init__(self, master):
         tk.Frame.__init__(self, master)
         self.urlContent = None        
@@ -428,6 +439,7 @@ class NavigationBar(tk.Frame):
         self.upHistory = []
         self.downHistory = []
         self.cookies={}
+        self.request_headers = []
         self.makeWidgets()
 
     def makeWidgets(self):
@@ -440,9 +452,48 @@ class NavigationBar(tk.Frame):
         labelUrl = tk.Label(urlFrame, text = "Actual URL:", width = 11, justify = tk.LEFT)
         labelUrl.pack(side = tk.LEFT)
         self.labelUrl = labelUrl
+        self.settings = tk.Button(urlFrame, font = self.customFont, text = "S", command = self.settingComm)
+        self.settings.pack(side = tk.RIGHT)
         entryUrl = tk.Entry(urlFrame, textvariable = self.activeUrl, font = self.customFont)
         entryUrl.pack(side=tk.LEFT, fill = tk.X, expand = 1 )
         entryUrl.bind('<Return>', self.returnKey)
+        entryUrl.bind('<Control-o>', self.controlleftKey)
+        
+    def settingComm(self):
+        msg = '<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n<settings>'
+        msg += '<category label="General">\n'
+        msg += '<setting type="lsep" label ="%s" color="red"/>\n' % 'General'
+        
+        genHdr = self.genHdr
+        for key, value in genHdr:
+            msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+            
+        msg += '<setting type="lsep" label ="%s" color="green"/>\n' % 'Response Headers'
+        rspHdr = self.rspHdr
+        for key, value in sorted(rspHdr):
+            msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+
+        msg += '<setting type="lsep" label ="%s" color="blue"/>\n' % 'Request Headers'
+        reqHdr = self.reqHdr
+        for key, value in sorted(reqHdr):
+            msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+        
+        msg += '</category>\n'
+        msg += '<category label="Headers">\n'
+        reqHdr = '|'.join(map(','.join, self.DEF_REQUEST_HEADERS))
+        msg += '''<setting id="req_headers" type="optionlst" default='%s' label="Request headers to use" columnsheadings = "Header, Value" />\n''' % reqHdr
+        msg += '</category>\n'
+        msg += '</settings>\n'
+
+        browserParam = {}
+        if self.request_headers: browserParam['req_headers'] = '|'.join(map(','.join, self.request_headers))
+        browser = AppSettingDialog(self, msg, isFile = False, settings = browserParam, title = 'Browser config params', dheight = 600, dwidth = 800)
+        browserParam = browser.result
+        if 'req_headers' in browserParam:
+            self.request_headers = [map(lambda x: x.strip(),record.split(',', 1)) for record in browserParam['req_headers'].split('|')]
+        else:
+            self.request_headers = []
+        
         
     def setActiveUrl(self, url):
         activeUrl = self.normUrl(self.activeUrl.get())
@@ -484,10 +535,18 @@ class NavigationBar(tk.Frame):
         thId = thread.start_new_thread(self.importUrl, (url, self.mutex))
         self.colorAnimation()
          
+    def controlleftKey(self, event):
+        name = tkFileDialog.askopenfilename(filetypes=[('text Files', '*.txt'), ('All Files', '*.*')])
+        if name:
+            name = 'file:///' + name
+            self.activeUrl.set(name)
+            self.returnKey()
+         
     def colorAnimation(self, *args, **kwargs):
         with self.mutex:
             bFlag = not self.urlContent 
         if bFlag:
+            self.settings['state'] = tk.DISABLED
             colorPalette = ['-  -  -  -', '\\  /  \\  /', '/  \\  /  \\']            
             actColor = self.labelUrl.cget('text')
             try:
@@ -497,6 +556,7 @@ class NavigationBar(tk.Frame):
             self.labelUrl.config(text = colorPalette[indx])
             self.labelUrl.after(100, self.colorAnimation)
         else:
+            self.settings['state'] = tk.NORMAL
             if isinstance(self.urlContent, Exception):
                 tkMessageBox.showerror('Error', self.urlContent)
                 self.urlContent = ''
@@ -573,24 +633,23 @@ class NavigationBar(tk.Frame):
         if cj != None and os.path.isfile(COOKIEFILE):                                  # now we have to install our CookieJar so that it is used as the default CookieProcessor in the default opener handler
                 cj.load(COOKIEFILE)
         
-        REQUEST_HEADERS = [
-            ["User-Agent" , "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.111 Safari/537.36"],
-            ["Accept","text/html, application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"],
-            ["Accept-Encoding","gzip,deflate,sdch"],
-            ["Accept-Language" , "es-ES,es;q=0.8,en;q=0.6"],
-            ["Cache-Control" , "max-age=0"],
-            ["Connection" , "keep-alive"]
-        ]
+        request_headers = self.request_headers or self.DEF_REQUEST_HEADERS
         
         referer = 'http://www.peliculaspepito.com/'
         if self.downHistory:
             referer = self.downHistory[-1]
-        REQUEST_HEADERS.append(["Referer" , referer])
+        request_headers.append(["Referer" , referer])
 
-        sep = '<post>'
-        urlToOpen, sep, postData = urlToOpen.partition(sep)
-        
-        headers = dict(REQUEST_HEADERS)
+        headers = dict(request_headers)
+
+        urlToOpen, custHdr = urlToOpen.partition('<headers>')[0:3:2]
+        if custHdr:
+            custHdr = urlparse.parse_qs(custHdr)
+            for key in custHdr:
+                headers[key] = custHdr[key][0]
+
+        urlToOpen, postData = urlToOpen.partition('<post>')[0:3:2]
+        postData = postData or None
         
         try:
             req = urllib2.Request(urlToOpen, postData or None, headers)
@@ -598,6 +657,13 @@ class NavigationBar(tk.Frame):
         except Exception as e:
             data = e
         else:
+            self.genHdr = []
+#             self.genHdr.append(('Remote Address', socket.gethostbyname(req.get_host()) + ':' + str(socket.getservbyname(req.get_type()))))
+#             self.genHdr.append(('Request Url', req.get_full_url()))
+#             self.genHdr.append(('Request Method', req.get_method()))
+#             self.genHdr.append(('Status Code', str(url.getcode())))
+            self.reqHdr = req.header_items()
+            self.rspHdr = url.headers.items()
             self.activeUrl.set(self.unNormUrl(url.geturl()))
             data = url.read()
             if url.info().get('Content-Encoding') == 'gzip':

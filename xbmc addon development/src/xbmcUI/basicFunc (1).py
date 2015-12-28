@@ -67,18 +67,14 @@ INFOLABELS_KEYS = [
 import cookielib
 
 def openUrl(urlToOpen, validate = False):
-    headers = {'User-Agent':'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3'}
-#                'Referer': 'http://www.novelashdgratis.tv/'}
-
-    urlToOpen, custHdr = urlToOpen.partition('<headers>')[0:3:2]
-    custHdr = custHdr or {}
-    if custHdr:
-        custHdr = urlparse.parse_qs(custHdr)
-        for key in custHdr:
-            headers[key] = custHdr[key][0]
-         
-    urlToOpen, data = urlToOpen.partition('<post>')[0:3:2]
-    data = data or None
+    headers = {'User-Agent':'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.9.0.3) Gecko/2008092417 Firefox/3.0.3',
+               'Referer':'http://www.novelashdgratis.tv/'}
+    nPos = urlToOpen.find('<post>')
+    if nPos == -1:
+        data = None 
+    else:
+        data = urlToOpen[nPos + 6:]
+        urlToOpen = urlToOpen[:nPos]
         
     cj = cookielib.LWPCookieJar()
     opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
