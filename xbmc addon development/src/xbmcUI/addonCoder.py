@@ -67,6 +67,19 @@ class CoderParser:
 
     def handle_apimenu(self, nodeId, menuId, paramDict, menuIcons, searchFlag, spanFlag):
         from basicFunc import INFOLABELS_KEYS
+        otherParam = {}
+        for key in paramDict.keys():
+            if not key.startswith('op_'): continue
+            modKey = key[3:]
+            otherParam[modKey] = paramDict.pop(key)
+        addonInfoKeys = [key for key in otherParam if key.startswith('addonInfo')]
+        if len(addonInfoKeys) > 1:
+            addonInfo = {}
+            for key in addonInfoKeys:
+                value = otherParam.pop(key)
+                key, value =  value.rpartition('<>')[0:3:2]
+                if key: addonInfo[key] = value
+                else: addonInfoDef = value
         addonInfoFlag = paramDict.has_key('regexp') 
         if addonInfoFlag: regexp = paramDict.pop('regexp')
         INDENT = '\n\t'        
@@ -112,14 +125,18 @@ class CoderParser:
             contextMenu = [tuple(elem.split(',')) for elem in paramDict.pop('contextmenus').split('|')]
             onlyContext = paramDict.pop('onlycontext') if paramDict.has_key('onlycontext') else False
             sourceCode += '\n\t'+ 'contextMenu = {"lista":' + str(contextMenu) + ', "replaceItems":' + str(onlyContext) + '}' 
+        
+        if len(addonInfoKeys) > 1:
+            sourceCode += '\n\t'+ 'addonInfo=' + str(addonInfo)
             
         sourceCode += '\n\t'+ 'menuContent = []'
         sourceCode += '\n\t'+ 'for elem in subMenus:'
         sourceCode += '\n\t\t'+ 'itemParam = dict([(key,elem.pop(key)) for key  in elem.keys() if key in LISTITEM_KEYS])'
         isFolder = str(paramDict['menu'] != 'media') if paramDict.has_key('menu') else 'True'
         sourceCode += '\n\t\t'+ 'itemParam["isFolder"] = ' + isFolder
-        sourceCode += '\n\t\t'+ 'otherParam = {}'
-#         sourceCode += '\n\t\t'+ 'otherParam = None'
+        sourceCode += '\n\t\t'+ 'otherParam = ' + str(otherParam)
+        if len(addonInfoKeys) > 1:
+            sourceCode += '\n\t\t'+ 'otherParam["addonInfo"] = addonInfo.get(menu, "%s")' % addonInfoDef 
         if contextMenuFlag:
             sourceCode += '\n\t\t'+ 'otherParam["contextMenu"] = dict(contextMenu)'
         if addonInfoFlag:

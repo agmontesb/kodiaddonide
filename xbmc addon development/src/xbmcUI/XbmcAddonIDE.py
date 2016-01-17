@@ -202,7 +202,6 @@ class XbmcAddonIDE(tk.Toplevel):
             self.explorerTree.onTreeSelection(nodeId)
             self.addonFilesViewer.focus_force()
                                 
-        
     def setActiveView(self, *args, **kwargs):
         refreshFlag = kwargs.get('refreshFlag', False)
         perspIndx = self.PERSPECTIVES.index(self.perspectiveIndx.get())
@@ -621,7 +620,7 @@ class XbmcAddonIDE(tk.Toplevel):
         parent, sep, threadId = iid.rpartition('.')
         self.setActiveKnot(threadId)
         
-    def comboBoxFiler(self):
+    def comboBoxFilerOLD(self):
         nodeLst = [elem for elem in self.xbmcThreads.getSameTypeNodes('media') if not elem.endswith('_lnk')]
         getRegEx = self.xbmcThreads.getThreadParam
         lista = [ '(?#<rexp-' + node + '>)'+ getRegEx(node, 'regexp') for node in nodeLst]
@@ -630,6 +629,18 @@ class XbmcAddonIDE(tk.Toplevel):
         for node in nodeLst:
             if not getRegEx(node, 'headregexp'): continue
             lista.extend(['(?#<rhead-' + node + '-' + label + '>)' + regexp for label, regexp in headLst(node)])        
+        return sorted(lista)
+
+    def comboBoxFiler(self):
+        nodeLst = [elem for elem in self.xbmcThreads.getSameTypeNodes('media') if not elem.endswith('_lnk')]
+        getRegEx = self.xbmcThreads.getThreadParam
+        getParent = lambda x: '(?#<rexp-' + self.xbmcThreads.getParent(x) + '>)' if self.xbmcThreads.getParent(x) else None
+        lista = [ ['(?#<rexp-' + node + '>)', getRegEx(node, 'regexp'), getParent(node)] for node in nodeLst]
+        lista.extend([ ['(?#<rnxt-' + node + '>)', getRegEx(node, 'nextregexp'), '(?#<rexp-' + node + '>)'] for node in nodeLst if getRegEx(node, 'nextregexp')])
+        headLst = lambda node: [elem.split('<->') for elem in getRegEx(node, 'headregexp').split('<=>')]
+        for node in nodeLst:
+            if not getRegEx(node, 'headregexp'): continue
+            lista.extend([['(?#<rhead-' + node + '-' + label + '>)', regexp, None] for label, regexp in headLst(node)])        
         return sorted(lista)
         
     def popUpMenu(self):
@@ -658,11 +669,13 @@ class XbmcAddonIDE(tk.Toplevel):
             self.setKnotParam('url', self.regexpEd.getActiveUrl())
         elif param == 'nextregexp':
             self.setKnotParam('nextregexp', self.regexpEd.getRegexpPattern())
+            self.regexpEd.regexpFrame.cbIndex.set('(?#<rnxt-' + self.getActiveKnot() + '>)')
         elif param == 'headregexp':
             knotId = self.getActiveKnot()
             headRegExp = self.xbmcThreads.getThreadParam(knotId, 'headregexp') or ''
             headRegExp += ('<=>' if headRegExp else '') + 'headervar<->' + self.regexpEd.getRegexpPattern()
             self.setKnotParam('headregexp', headRegExp )
+            self.regexpEd.regexpFrame.cbIndex.set('(?#<rhead-' + self.getActiveKnot() + '>)')
                 
     def setUrl(self):
         self.setKnotParam('url', self.regexpEd.getActiveUrl())
@@ -674,6 +687,7 @@ class XbmcAddonIDE(tk.Toplevel):
         exitFlag = self.setKnotParam('regexp', self.regexpEd.getRegexpPattern())
         if exitFlag == 'ok': return
         self.setKnotParam('compflags', self.regexpEd.getCompFlags())
+        self.regexpEd.regexpFrame.cbIndex.set('(?#<rexp-' + self.getActiveKnot() + '>)')
         
     def newSendOutput(self):
         refKnot = self.xbmcThreads.threadDef

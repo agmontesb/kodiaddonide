@@ -17,57 +17,62 @@ import mimetools
 import mimetypes
 import tkSimpleDialog
 import optparse
+import json
 
 import gzip
 import zlib
 from urllib import urlencode
 from _pytest.config import Parser
 
+MOBILE_BROWSER = "Mozilla/5.0 (Linux; U; Android 4.0.3; ko-kr; LG-L160L Build/IML74K) AppleWebkit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30"
+DESKTOP_BROWSER = "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36"
 
 BOUNDARY = mimetools.choose_boundary()
 
 def createParser():
     parser = optparse.OptionParser()
+    parserdefaults = {'header': '{}', 'referer': None, 'cookie_jar': None, 'post302': False, 'proxy': None, 'remote_header_name': False, 'proxy_auth': 'basic', 'req_method': '', 'create_dirs': False, 'location': False, 'include': False, 'form': '[]', 'cookie': None, 'user': None, 'post301': False, 'remote_name': False, 'data': '[]', 'auth_method': 'basic', 'proxy_user': None, 'url': None, 'data_binary': None, 'data_raw': None, 'user_agent': None, 'output': None, 'data_urlencode': None, 'post303': False}
+    parser.set_defaults(**parserdefaults)
 
     parser.add_option('--url', dest = 'url')
 
-    parser.add_option('-H', '--header', action = 'callback', callback = headerProc, type = 'string', nargs = 1, dest = 'header', default = [])
+    parser.add_option('-H', '--header', action = 'callback', callback = headerProc, type = 'string', nargs = 1, dest = 'header')
     parser.add_option('-A', '--user-agent', action = 'callback', callback = headerProc, type = 'string', nargs = 1)
     parser.add_option('-e', '--referer', action = 'callback', callback = headerProc, type = 'string', nargs = 1)
     parser.add_option('--compressed', action = 'callback', callback = headerProc)
 
-    parser.add_option('-F', '--form', action = 'callback', callback = formProc, type = 'string', nargs = 1, dest = 'form', default = [])
-    parser.add_option('-d', '--data', action = 'callback', callback = dataProc, type = 'string', nargs = 1, dest = 'data', default = [])
+    parser.add_option('-F', '--form', action = 'callback', callback = formProc, type = 'string', nargs = 1, dest = 'form')
+    parser.add_option('-d', '--data', action = 'callback', callback = dataProc, type = 'string', nargs = 1, dest = 'data')
     parser.add_option('--data-urlencode', action = 'callback', callback = dataProc, type = 'string', nargs = 1)
     parser.add_option('--data-raw', action = 'callback', callback = dataProc, type = 'string', nargs = 1)
     parser.add_option('--data-binary', action = 'callback', callback = dataProc, type = 'string', nargs = 1)
 
-    parser.add_option('-i', '--include', action = 'store_true', dest = 'include', default = False)
+    parser.add_option('-i', '--include', action = 'store_true', dest = 'include')
 
-    parser.add_option('-L', '--location', action = 'store_true', dest = 'location', default = False)
-    parser.add_option('--post301', action = 'store_true', dest = 'post301', default = False)
-    parser.add_option('--post302', action = 'store_true', dest = 'post302', default = False)
-    parser.add_option('--post303', action = 'store_true', dest = 'post303', default = False)
+    parser.add_option('-L', '--location', action = 'store_true', dest = 'location')
+    parser.add_option('--post301', action = 'store_true', dest = 'post301')
+    parser.add_option('--post302', action = 'store_true', dest = 'post302')
+    parser.add_option('--post303', action = 'store_true', dest = 'post303')
 
 
     parser.add_option('-o', '--output', dest = 'output')
-    parser.add_option('-O', '--remote-name', action = 'store_true', dest = 'remote_name', default = False)
-    parser.add_option('--remote-dirs', action = 'store_true', dest = 'remote_dirs', default = False)
-    parser.add_option('--create-dirs', action = 'store_true', dest = 'create_dirs', default = False)
+    parser.add_option('-O', '--remote-name', action = 'store_true', dest = 'remote_name')
+    parser.add_option('--remote-header-name', action = 'store_true', dest = 'remote_header_name')
+    parser.add_option('--create-dirs', action = 'store_true', dest = 'create_dirs')
 
     parser.add_option('-b', '--cookie', dest = 'cookie')
     parser.add_option('-c', '--cookie-jar', dest = 'cookie_jar')
 
     parser.add_option('-u', '--user', dest = 'user')
-    parser.add_option('--digest', action = 'store_const', const = 'digest', dest = 'auth_method', default = 'basic')
+    parser.add_option('--digest', action = 'store_const', const = 'digest', dest = 'auth_method')
     parser.add_option('--basic', action = 'store_const', const = 'basic', dest = 'auth_method')
 
     parser.add_option('-x', '--proxy', dest = 'proxy')
     parser.add_option('-U', '--proxy-user', dest = 'proxy_user')    
-    parser.add_option('--proxy-digest', action = 'store_const', const = 'digest', dest = 'proxy_auth', default = 'basic')
+    parser.add_option('--proxy-digest', action = 'store_const', const = 'digest', dest = 'proxy_auth')
     parser.add_option('--proxy-basic', action = 'store_const', const = 'basic', dest = 'proxy_auth')
 
-    parser.add_option('-G', '--get', action = 'store_const', const = 'GET', dest = 'req_method', default = '')
+    parser.add_option('-G', '--get', action = 'store_const', const = 'GET', dest = 'req_method')
     parser.add_option('--head', action = 'store_const', const = 'HEAD', dest = 'req_method')
     parser.add_option('--post', action = 'store_const', const = 'POST', dest = 'req_method')
     
@@ -99,40 +104,44 @@ def dataProc(option, opt_str, value, parser):
                 value = f.read()
     elif opt_str == '--data-raw':
         pass
-    parser.values.data.append(value)
+    data = json.loads(parser.values.data)
+    data.append(value) 
+    parser.values.data = json.dumps(data)
     pass
 
 def formProc(option, opt_str, value, parser):
-        name, suffix = value.strip('"').split('=', 1)
-        value, mimetype = suffix.partition(';')[0:3:2]
-        if mimetype:
-            mimetype = 'Content-' + mimetype.replace('=',':').capitalize()
-        if value[0] in '<@':
-            prefix = value[0]
-            value = value[1:]
-            mimetype = mimetype.partition('=')[2]
-            if not mimetype: 
-                mimetype = mimetypes.guess_type(value)[0] or 'application/octet-stream'
-            rtype = 'r' if 'text' in mimetype else 'rb'
-            with open(value, rtype) as f: body = f.read()
-            mimetype = 'Content-Type: ' + mimetype
-            if prefix == '@':
-                contentDisp = 'Content-Disposition: file; name"%s"; filename="%s"' % (name, value)
-            else:
-                contentDisp = 'Content-Disposition: form-data; name"%s"' % name
-            parser.values.form.extend(['--' + BOUNDARY,
-                                       contentDisp,
-                                       mimetype,
-                                       '',
-                                       body,])
-            pass
+    form = json.loads(parser.values.form)
+    name, suffix = value.strip('"').split('=', 1)
+    value, mimetype = suffix.partition(';')[0:3:2]
+    if mimetype:
+        mimetype = 'Content-' + mimetype.replace('=',':').capitalize()
+    if value[0] in '<@':
+        prefix = value[0]
+        value = value[1:]
+        mimetype = mimetype.partition('=')[2]
+        if not mimetype: 
+            mimetype = mimetypes.guess_type(value)[0] or 'application/octet-stream'
+        rtype = 'r' if 'text' in mimetype else 'rb'
+        with open(value, rtype) as f: body = f.read()
+        mimetype = 'Content-Type: ' + mimetype
+        if prefix == '@':
+            contentDisp = 'Content-Disposition: file; name"%s"; filename="%s"' % (name, value)
         else:
-            mimetype = 'Content-Type:' + mimetype or 'text/plain'
-            parser.values.form.extend(['--' + BOUNDARY,
-                                       'Content-Disposition: form-data; name"%s"' % name,
-                                       mimetype,
-                                       '',
-                                       value,])
+            contentDisp = 'Content-Disposition: form-data; name"%s"' % name
+        form.extend(['--' + BOUNDARY,
+                     contentDisp,
+                     mimetype,
+                     '',
+                     body,])
+        pass
+    else:
+        mimetype = 'Content-Type:' + mimetype or 'text/plain'
+        form.extend(['--' + BOUNDARY,
+                     'Content-Disposition: form-data; name"%s"' % name,
+                     mimetype,
+                     '',
+                     value,])
+    parser.values.form = json.dumps(form)
             
 def headerProc(option, opt_str, value, parser):
     if opt_str == '--user-agent':
@@ -141,8 +150,11 @@ def headerProc(option, opt_str, value, parser):
         value = 'Referer: ' + value
     elif opt_str == '--compressed':
         value = 'Accept-encoding: gzip,deflate'
-    toappend = value.split(': ', 1)
-    parser.values.header.append(toappend)
+    key, value = value.split(': ', 1)
+    header = json.loads(parser.values.header)
+    if value: header[key] = value
+    elif header.has_key(key): header.pop(key)
+    parser.values.header = json.dumps(header)
 
 
 class network:
@@ -153,6 +165,7 @@ class network:
         self.log = LogNetFlow()
         self.defDirectory = defDirectory
         self.parser = createParser()
+        self.parserDefaults = self.parser.defaults.copy()
         pass
     
     def parseCommand(self, curlCommand):
@@ -165,16 +178,25 @@ class network:
         opvalues = [elem for elem in map(operator.methodcaller('strip', ' "') ,re.split(self.CURL_PATTERN, curlStr)) if elem]
         return opvalues
     
-    def openUrl(self, urlToOpen):
-        self.log.clearLog()
+    def getValuesFromUrl(self, urlToOpen):
         opvalues = self.parseCommand(urlToOpen)
         opvalues = self.baseOptions + opvalues
-        if not opvalues[-1]: return None
-        values, args = self.parser.parse_args(opvalues)
-        assert len(args) == 1, 'Opciones no reconocibles ' + str(args)
-        urlStr = args[0]
-        values.url = urlStr.strip('"')
-        
+        if opvalues[-1]:
+            self.parser.set_defaults(**self.parserDefaults)
+            values, args = self.parser.parse_args(opvalues)
+#             assert len(args) == 1, 'Opciones no reconocibles ' + str(args)
+            urlStr = args[0].strip('"')
+            if not urlStr.partition('//')[1]: urlStr = 'http://' + urlStr
+            values.url = urlStr
+        else:
+            values = None
+        self.values = values
+        return self.values.url if values else ''
+    
+    def openUrl(self, urlToOpen):
+        self.log.clearLog()
+        if urlToOpen: self.getValuesFromUrl(urlToOpen)
+        values = self.values
         opener = self.getOpener(values)
         self.request = self.getRequest(values)
         self.log.logRequest(self.request)
@@ -182,23 +204,30 @@ class network:
             self.response = opener.open(self.request)
         except Exception as e:
             self.request = None
+            resp_url = values.url
             data = e
         else:
-            data = self.response.read()
-            responseinfo = self.response.info()
-            content_encoding = responseinfo.get('Content-Encoding')
-            data = unCompressMethods(data, content_encoding)
-            if "text" in responseinfo.gettype():
-                encoding = None
-                if 'content-type' in responseinfo:
-                    content_type = responseinfo.get('content-type').lower()
-                    match = re.search('charset=(\S+)', content_type)
-                    if match: encoding = match.group(1)
-                charset = encoding or 'iso-8859-1'
-                data = data.decode(charset, 'replace')
-            self.processData(values, data)
-            self.response.close()
-        return data
+            resp_url = self.response.geturl()
+            try:
+                data = self.response.read()
+            except Exception as e:
+                data = e
+            else:
+                responseinfo = self.response.info()
+                content_encoding = responseinfo.get('Content-Encoding')
+                data = unCompressMethods(data, content_encoding)
+                if "text" in responseinfo.gettype():
+                    encoding = None
+                    if 'content-type' in responseinfo:
+                        content_type = responseinfo.get('content-type').lower()
+                        match = re.search('charset=(\S+)', content_type)
+                        if match: encoding = match.group(1)
+                    charset = encoding or 'iso-8859-1'
+                    data = data.decode(charset, 'replace')
+                self.processData(values, data)
+            finally:
+                self.response.close()
+        return data, resp_url
         pass
     
     def processData(self, values, data):
@@ -238,8 +267,9 @@ class network:
     def getOpener(self, values):
         include = None if values.include else self.log
         pSwitches = [values.post301, values.post302, values.post303]
-        opener_handlers = [LogHandler(values.url)] 
-        opener_handlers.append(netHTTPRedirectHandler(location = values.location, include = include, postSwitches = pSwitches))
+#         opener_handlers = [LogHandler(values.url)] 
+#         opener_handlers.append(netHTTPRedirectHandler(location = values.location, include = include, postSwitches = pSwitches))
+        opener_handlers = [netHTTPRedirectHandler(location = values.location, include = include, postSwitches = pSwitches)]
     
         cookie_val = None
         if values.cookie_jar: cookie_val = values.cookie_jar
@@ -290,31 +320,33 @@ class network:
     
     def getRequest(self, values):
         postdata = ''
-        if values.form:
-            values.form.append('--' + BOUNDARY + '--')
-            values.form.append('')
-            postdata += '\r\n'.join(values.form)
-            values.header.append(['Content-type', 'multipart/form-data; boundary=%s' % BOUNDARY])
-            values.header.append(['Content-length', '%s' % len(postdata)])
-            values.data = []
+        form = json.loads(values.form)
+        if form:
+            form.append('--' + BOUNDARY + '--')
+            form.append('')
+            postdata += '\r\n'.join(form)
+            headerProc(None, '-H', 'Content-type: multipart/form-data; boundary=%s' % BOUNDARY, self.parser)
+            headerProc(None, '-H','Content-length: %s' % len(postdata), self.parser)
+            values.data = '[]'
         
-        if values.data:
-            urlencodedata = '&'.join(values.data)
+        data = json.loads(values.data)
+        if data:
+            urlencodedata = '&'.join(data)
             if urlencodedata and values.req_method == 'GET':
                 values.url += '?' + urlencodedata
             else:
                 postdata = urlencodedata
         postdata = postdata or None
         
-        headers = {}
-        for key, value in values.header:
-            if value: headers[key] = value
-            elif headers.has_key(key): headers.pop(key)
+        headers = json.loads(values.header)
+#         for key, value in json.loads(values.header):
+#             if value: headers[key] = value
+#             elif headers.has_key(key): headers.pop(key)
             
         urlStr = values.url        
         request = urllib2.Request(urlStr, postdata, headers)
         if values.req_method  and values.req_method not in ['GET', 'POST']: 
-            setattr(request, 'get_methd', lambda: values.req_method)
+            setattr(request, 'get_method', lambda: values.req_method)
         return request
         pass
     
@@ -363,6 +395,12 @@ class LogNetFlow:
         return self.getNetFlow()        
     
 class LogHandler(urllib2.BaseHandler):
+    '''
+    Esta clase permitirá la implementación del opener para incluir suiches redirecciones, logger
+    Se hizo una prueba de concepto que permitió entender la operación del módulo urllib2 y del 
+    direcopener allí.
+    Se debe retomar para implementar otras opciones
+    '''
     handler_order = 480
     SEPARATOR = '\n' + 35*'=' + ' %s ' + 35*'='  
     HEAD_SEP = '\n' + 80*'-'

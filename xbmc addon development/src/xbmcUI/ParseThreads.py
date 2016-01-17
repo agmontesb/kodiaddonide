@@ -19,6 +19,7 @@ import socket
 import urlparse
 import re
 import CustomRegEx
+import network
 import Queue
 import xml.etree.ElementTree as ET
 import time
@@ -63,7 +64,7 @@ class RegexpBar(tk.Frame):
             self.getMatchTag(nextMatch = True)
 
     def setDropDownFiler(self, callbckFunc):
-        self.dropDownFiler = callbckFunc 
+        self.dropDownFiler = callbckFunc
         
     def setGUI(self):
         self.customFont = tkFont.Font(family = 'Consolas', size = 18)
@@ -72,6 +73,8 @@ class RegexpBar(tk.Frame):
         frame1.pack(fill = tk.X)
         self.butKeyMaker = tk.Button(frame1, text = "ZoomIn", command = self.zoomInOut)        
         self.butKeyMaker.pack(side = tk.LEFT)
+        self.cbIndex = tk.StringVar()
+        tk.Label(frame1, textvariable = self.cbIndex).pack(side = tk.LEFT)
         self.regexPattern = tk.StringVar()
         self.regexPattern.trace("w", self.getPatternMatch)
         self.entry = ttk.Combobox(frame1, font = self.customFont, textvariable = self.regexPattern)
@@ -155,11 +158,10 @@ class RegexpBar(tk.Frame):
 
 
     def fillDropDownLst(self):
-        if self.dropDownFiler:
-            theValues = self.dropDownFiler()
-        else:
-            theValues =  ['uno', 'dos', 'tres']
-        self.entry.configure(values = theValues)
+        if not self.dropDownFiler: return
+        self.theValues = self.dropDownFiler()
+        cbValues = [val[0]+val[1] for val in self.theValues]
+        self.entry.configure(values = cbValues)
 
     def extreme(self, widgetText):
         if widgetText == '>>':
@@ -278,12 +280,20 @@ class RegexpBar(tk.Frame):
 
         
     def getPatternMatch(self, *dummy):
-        if self.entry.current() != -1:
-            pattern = self.regexPattern.get() 
-            if pattern.startswith('(?#<'):
-                posFin = pattern.find(')') + 1
-                self.regexPattern.set(pattern[posFin:])
+        pattern = self.regexPattern.get()
+        if self.entry.current() != -1 and self.entry.get() == pattern:
+            ndx, rgx = re.match(r'(?P<ndx>\(\?#<r.+?>\))?(?P<rgx>.+?)\Z', pattern).groups()
+            self.cbIndex.set(ndx) 
+            self.regexPattern.set(rgx)
+        else:
+            if self.cbIndex.get():
+                cbValues = self.entry.cget('values')
+                if self.cbIndex.get() + pattern not in cbValues: self.cbIndex.set('') 
         self.formatContent()
+        if self.cbIndex.get():
+            self.extreme('<<')
+            self.textWidget.focus_force() 
+        pass
             
     def formatContent(self, index1 = '1.0', index2 = 'end'):
         while self.activeCallBack:
@@ -440,6 +450,8 @@ class NavigationBar(tk.Frame):
         self.downHistory = []
         self.cookies={}
         self.request_headers = []
+        self.browserParam = {'user-agent':network.DESKTOP_BROWSER, 'switch_location':True, 'working-dir':'c:/testFiles'}
+        self.initNetwork()
         self.makeWidgets()
 
     def makeWidgets(self):
@@ -460,40 +472,66 @@ class NavigationBar(tk.Frame):
         entryUrl.bind('<Control-o>', self.controlleftKey)
         
     def settingComm(self):
-        msg = '<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n<settings>'
-        msg += '<category label="General">\n'
-        msg += '<setting type="lsep" label ="%s" color="red"/>\n' % 'General'
-        
-        genHdr = self.genHdr
-        for key, value in genHdr:
-            msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
-            
-        msg += '<setting type="lsep" label ="%s" color="green"/>\n' % 'Response Headers'
-        rspHdr = self.rspHdr
-        for key, value in sorted(rspHdr):
-            msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+#         msg = '<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n<settings>'
+#         msg += '<category label="General">\n'
+#         msg += '<setting type="lsep" label ="%s" color="red"/>\n' % 'General'
+#         
+#         genHdr = self.genHdr
+#         for key, value in genHdr:
+#             msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+#             
+#         msg += '<setting type="lsep" label ="%s" color="green"/>\n' % 'Response Headers'
+#         rspHdr = self.rspHdr
+#         for key, value in sorted(rspHdr):
+#             msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+# 
+#         msg += '<setting type="lsep" label ="%s" color="blue"/>\n' % 'Request Headers'
+#         reqHdr = self.reqHdr
+#         for key, value in sorted(reqHdr):
+#             msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
+#         
+#         msg += '</category>\n'
+#         msg += '<category label="Headers">\n'
+#         reqHdr = '|'.join(map(','.join, self.DEF_REQUEST_HEADERS))
+#         msg += '''<setting id="req_headers" type="optionlst" default='%s' label="Request headers to use" columnsheadings = "Header, Value" />\n''' % reqHdr
+#         msg += '</category>\n'
+#         msg += '</settings>\n'
 
-        msg += '<setting type="lsep" label ="%s" color="blue"/>\n' % 'Request Headers'
-        reqHdr = self.reqHdr
-        for key, value in sorted(reqHdr):
-            msg += '''<setting type="lsep" label ='%s' noline="1"/>\n''' % (key.ljust(25) + ': ' + value)
-        
-        msg += '</category>\n'
-        msg += '<category label="Headers">\n'
-        reqHdr = '|'.join(map(','.join, self.DEF_REQUEST_HEADERS))
-        msg += '''<setting id="req_headers" type="optionlst" default='%s' label="Request headers to use" columnsheadings = "Header, Value" />\n''' % reqHdr
-        msg += '</category>\n'
-        msg += '</settings>\n'
+#         browserParam = {}
+#         if self.request_headers: browserParam['req_headers'] = '|'.join(map(','.join, self.request_headers))
+#         browser = AppSettingDialog(self, msg, isFile = False, settings = browserParam, title = 'Browser config params', dheight = 600, dwidth = 800)
+#         browserParam = browser.result
+#         if 'req_headers' in browserParam:
+#             self.request_headers = [map(lambda x: x.strip(),record.split(',', 1)) for record in browserParam['req_headers'].split('|')]
+#         else:
+#             self.request_headers = []
 
-        browserParam = {}
-        if self.request_headers: browserParam['req_headers'] = '|'.join(map(','.join, self.request_headers))
-        browser = AppSettingDialog(self, msg, isFile = False, settings = browserParam, title = 'Browser config params', dheight = 600, dwidth = 800)
-        browserParam = browser.result
-        if 'req_headers' in browserParam:
-            self.request_headers = [map(lambda x: x.strip(),record.split(',', 1)) for record in browserParam['req_headers'].split('|')]
-        else:
-            self.request_headers = []
+        browser = AppSettingDialog(self, 'browserSettings.xml', settings = self.browserParam, title = 'Browser config params')
+        bp = browser.result
+        self.browserParam = bp
+        self.initNetwork()
         
+        
+    def initNetwork(self):
+        bp = self.browserParam
+        initConf = 'curl '
+        initConf += ' --user-agent "%s"' % bp['user-agent']
+        initConf += ' --cookie-jar "%s"' % bp.get('cookie-jar','cookies.lwp')
+        if bp.has_key('flag-output'):
+            initConf += ' -o "%s"' % bp['output']
+            if bp.has_key('remote-name'): initConf += ' --remote-name'
+            if bp.has_key('remote-header-name'): initConf += ' --remote-header-name'
+        for key in bp:
+            if not key.startswith('switch_'): continue
+            switch = key[len('switch_'):]
+            initConf += ' --' + switch
+        if bp.has_key('flag-proxy'):
+            initConf += ' --proxy "%s"' % bp['proxy']
+            if bp.has_key('proxy_auth'):
+                initConf += ' --proxy-%s' % bp['proxy_auth']
+                initConf += ' --proxy-user "%s:%s"' % (bp['proxy-user'], bp['proxy-password'])
+
+        self.net = network.network(initConf, defDirectory = bp['working-dir'])        
         
     def setActiveUrl(self, url):
         activeUrl = self.normUrl(self.activeUrl.get())
@@ -502,7 +540,8 @@ class NavigationBar(tk.Frame):
         self.returnKey()
             
     def getActiveUrl(self):
-        return self.normUrl(self.activeUrl.get())
+        rawUrl = self.activeUrl.get()
+        return self.net.getValuesFromUrl(rawUrl) if rawUrl else ''
     
     def nxtButton(self, *args, **kwargs):
         if not len(self.upHistory): return 
@@ -510,29 +549,31 @@ class NavigationBar(tk.Frame):
         self.downHistory.append(self.upHistory.pop())
         if len(self.upHistory) == 1:
             self.nextUrl.config(state = tk.DISABLED)
-        self.setActiveUrl(self.upHistory[-1])
+        self.activeUrl.set(self.upHistory[-1])
+        self.returnKey()
         
     def prevButton(self, *args, **kwargs):
         self.nextUrl.config(state = tk.NORMAL)
         self.upHistory.append(self.downHistory.pop())
         if not len(self.downHistory):
             self.prevUrl.config(state = tk.DISABLED)
-        self.setActiveUrl(self.upHistory[-1])            
+        self.activeUrl.set(self.upHistory[-1])
+        self.returnKey()            
 
     def returnKey(self, *args, **kwargs):
-        url = self.getActiveUrl()
-        if not url: return
+        rawUrl = self.activeUrl.get()
+        if not rawUrl: return
         if not self.upHistory:
-            self.upHistory.append(url.partition('<post>')[0])
-        elif url != self.upHistory[-1]:
+            self.upHistory.append(rawUrl)
+        elif rawUrl != self.upHistory[-1]:
             if len(self.upHistory) == 1:
                 self.downHistory.append(self.upHistory.pop())
                 self.prevUrl.config(state = tk.NORMAL)
             else:
                 self.upHistory = []
-            self.upHistory.append(url.partition('<post>')[0])
+            self.upHistory.append(rawUrl)
 
-        thId = thread.start_new_thread(self.importUrl, (url, self.mutex))
+        thId = thread.start_new_thread(self.importUrl, (rawUrl, self.mutex))
         self.colorAnimation()
          
     def controlleftKey(self, event):
@@ -581,14 +622,15 @@ class NavigationBar(tk.Frame):
         return url
 
     def importUrl(self, urlToOpen, mutex):
-        urlToOpen = self.normUrl(urlToOpen)
-        data = self.openUrl(urlToOpen)
+        data, resp_url = self.net.openUrl(urlToOpen)
         if isinstance(data, basestring):
             for match in re.finditer("\$\.cookie\('([^']+)',\s*'([^']+)",data):
                 key,value = match.groups()
                 self.cookies[key]=value
-            self.cookies["url_referer"] = urlToOpen.partition('<post>')[0]
+#             self.cookies["url_referer"] = self.values.url
         with mutex:
+            resp_url = self.unNormUrl(resp_url)
+            self.activeUrl.set(resp_url)
             self.urlContent = data
 
     def openUrl(self, urlToOpen):
@@ -677,77 +719,77 @@ class NavigationBar(tk.Frame):
         if cj != None: cj.save(COOKIEFILE)                     # save the cookies again                
         return data
     
-    def getReguestAndUrlOpen(self):
-    # 31-08-04
-    #v1.0.0 
-    
-    # cookie_example.py
-    # An example showing the usage of cookielib (New to Python 2.4) and ClientCookie
-    
-    # Copyright Michael Foord
-    # You are free to modify, use and relicense this code.
-    # No warranty express or implied for the accuracy, fitness to purpose or otherwise for this code....
-    # Use at your own risk !!!
-    
-    # If you have any bug reports, questions or suggestions please contact me.
-    # If you would like to be notified of bugfixes/updates then please contact me and I'll add you to my mailing list.
-    # E-mail michael AT foord DOT me DOT uk
-    # Maintained at www.voidspace.org.uk/atlantibots/pythonutils.html
-    
-        COOKIEFILE = 'cookies.lwp'          # the path and filename that you want to use to save your cookies in
-        import os.path
-        
-        cj = None
-        cookielib = None
-        
-        try:                                    # Let's see if cookielib is available
-            import cookielib            
-        except ImportError:
-            import urllib2
-            urlopen = urllib2.urlopen
-            Request = urllib2.Request
-        else:
-            import urllib2    
-            urlopen = urllib2.urlopen
-            cj = cookielib.LWPCookieJar()       # This is a subclass of FileCookieJar that has useful load and save methods
-            Request = urllib2.Request
-        
-        ####################################################
-        # We've now imported the relevant library - whichever library is being used urlopen is bound to the right function for retrieving URLs
-        # Request is bound to the right function for creating Request objects
-        # Let's load the cookies, if they exist. 
-            
-        if cj != None:                                  # now we have to install our CookieJar so that it is used as the default CookieProcessor in the default opener handler
-            if os.path.isfile(COOKIEFILE):
-                cj.load(COOKIEFILE)
-            opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
-            urllib2.install_opener(opener)
-        
-        # If one of the cookie libraries is available, any call to urlopen will handle cookies using the CookieJar instance we've created
-        # (Note that if we are using ClientCookie we haven't explicitly imported urllib2)
-        # as an example :
-        
-        theurl = 'http://www.diy.co.uk'         # an example url that sets a cookie, try different urls here and see the cookie collection you can make !
-        txdata = None                                                                           # if we were making a POST type request, we could encode a dictionary of values here - using urllib.urlencode
-        txheaders =  {'User-agent' : 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'}          # fake a user agent, some websites (like google) don't like automated exploration
-        
-        try:
-            req = Request(theurl, txdata, txheaders)            # create a request object
-            handle = urlopen(req)                               # and open it to return a handle on the url
-        except IOError, e:
-            mess = 'We failed to open "%s".' % theurl
-            if hasattr(e, 'code'):
-                mess += '\nWe failed with error code - %s.' % e.code
-                tkMessageBox.showerror('Error message', mess)
-        else:
-            mess = 'Here are the headers of the page :'
-            mess += '\n' +  handle.info()                             # handle.read() returns the page, handle.geturl() returns the true url of the page fetched (in case urlopen has followed any redirects, which it sometimes does)
-        
-        print
-        if cj == None:
-            tkMessageBox.showerror('Error message', "We don't have a cookie library available - sorry.\nI can't show you any cookies.")
-        else:
-            cj.save(COOKIEFILE)                     # save the cookies again        
+#     def getReguestAndUrlOpen(self):
+#     # 31-08-04
+#     #v1.0.0 
+#     
+#     # cookie_example.py
+#     # An example showing the usage of cookielib (New to Python 2.4) and ClientCookie
+#     
+#     # Copyright Michael Foord
+#     # You are free to modify, use and relicense this code.
+#     # No warranty express or implied for the accuracy, fitness to purpose or otherwise for this code....
+#     # Use at your own risk !!!
+#     
+#     # If you have any bug reports, questions or suggestions please contact me.
+#     # If you would like to be notified of bugfixes/updates then please contact me and I'll add you to my mailing list.
+#     # E-mail michael AT foord DOT me DOT uk
+#     # Maintained at www.voidspace.org.uk/atlantibots/pythonutils.html
+#     
+#         COOKIEFILE = 'cookies.lwp'          # the path and filename that you want to use to save your cookies in
+#         import os.path
+#         
+#         cj = None
+#         cookielib = None
+#         
+#         try:                                    # Let's see if cookielib is available
+#             import cookielib            
+#         except ImportError:
+#             import urllib2
+#             urlopen = urllib2.urlopen
+#             Request = urllib2.Request
+#         else:
+#             import urllib2    
+#             urlopen = urllib2.urlopen
+#             cj = cookielib.LWPCookieJar()       # This is a subclass of FileCookieJar that has useful load and save methods
+#             Request = urllib2.Request
+#         
+#         ####################################################
+#         # We've now imported the relevant library - whichever library is being used urlopen is bound to the right function for retrieving URLs
+#         # Request is bound to the right function for creating Request objects
+#         # Let's load the cookies, if they exist. 
+#             
+#         if cj != None:                                  # now we have to install our CookieJar so that it is used as the default CookieProcessor in the default opener handler
+#             if os.path.isfile(COOKIEFILE):
+#                 cj.load(COOKIEFILE)
+#             opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(cj))
+#             urllib2.install_opener(opener)
+#         
+#         # If one of the cookie libraries is available, any call to urlopen will handle cookies using the CookieJar instance we've created
+#         # (Note that if we are using ClientCookie we haven't explicitly imported urllib2)
+#         # as an example :
+#         
+#         theurl = 'http://www.diy.co.uk'         # an example url that sets a cookie, try different urls here and see the cookie collection you can make !
+#         txdata = None                                                                           # if we were making a POST type request, we could encode a dictionary of values here - using urllib.urlencode
+#         txheaders =  {'User-agent' : 'Mozilla/4.0 (compatible; MSIE 5.5; Windows NT)'}          # fake a user agent, some websites (like google) don't like automated exploration
+#         
+#         try:
+#             req = Request(theurl, txdata, txheaders)            # create a request object
+#             handle = urlopen(req)                               # and open it to return a handle on the url
+#         except IOError, e:
+#             mess = 'We failed to open "%s".' % theurl
+#             if hasattr(e, 'code'):
+#                 mess += '\nWe failed with error code - %s.' % e.code
+#                 tkMessageBox.showerror('Error message', mess)
+#         else:
+#             mess = 'Here are the headers of the page :'
+#             mess += '\n' +  handle.info()                             # handle.read() returns the page, handle.geturl() returns the true url of the page fetched (in case urlopen has followed any redirects, which it sometimes does)
+#         
+#         print
+#         if cj == None:
+#             tkMessageBox.showerror('Error message', "We don't have a cookie library available - sorry.\nI can't show you any cookies.")
+#         else:
+#             cj.save(COOKIEFILE)                     # save the cookies again        
                                 
 class ScrolledList(tk.Frame):
     def __init__(self, master, threadSource = None):
@@ -1191,10 +1233,12 @@ class RegexpFrame(tk.Frame):
         activeKnotId = xbmcThreads.threadDef
         if xbmcThreads.getThreadAttr(activeKnotId, 'type') != 'thread': return
         urlToOpen = xbmcThreads.getThreadParam(activeKnotId, 'url')
-        self.setActiveUrl(urlToOpen)
+        self.urlFrame.setActiveUrl(urlToOpen)
         compFlags = xbmcThreads.getThreadParam(activeKnotId, 'compflags')
         self.setCompFlags(compFlags)
         regexp = xbmcThreads.getThreadParam(activeKnotId, 'regexp')
+        self.regexpFrame.fillDropDownLst()
+        self.regexpFrame.cbIndex.set('(?#<rexp-' + activeKnotId + '>)') 
         self.setRegexpPattern(regexp)
         
     def setGUI(self):
@@ -1206,7 +1250,8 @@ class RegexpFrame(tk.Frame):
         
         self.regexpFrame = RegexpBar(self, self.messageVar)
         self.regexpFrame.pack(fill = tk.X)
-        self.regexpFrame.setDropDownFiler(self.fillDropDownLst)
+#         self.regexpFrame.setDropDownFiler(self.fillDropDownLst)
+#         self.regexpFrame.dropDownFiler()
         self.regexpFrame.setZoomManager(self.zoom)
         
         
@@ -1229,10 +1274,12 @@ class RegexpFrame(tk.Frame):
         
     def zoom(self, btnText):
         if btnText == 'ZoomIn':
-            selRange = self.txtEditor.getSelRange() or self.txtEditor.getSelRange('actMatch') 
+            selRange = self.txtEditor.getSelRange() or self.txtEditor.getSelRange('actMatch')
             if not selRange: return False
+            rgxFlag = not self.txtEditor.getSelRange()
             texto = self.txtEditor.getContent(*selRange)
             self.setContent(texto, False)
+            if rgxFlag: self.setActiveUrl()
         else:
             self.urlFrame.returnKey()
         return True
@@ -1240,12 +1287,11 @@ class RegexpFrame(tk.Frame):
     def setDropDownFiler(self, callbckFunc):
         self.regexpFrame.setDropDownFiler(callbckFunc) 
                 
-    def fillDropDownLst(self):
-        if self.dropDownFiler:
-            theValues = self.dropDownFiler()
-        else:
-            theValues =  ['uno', 'dos', 'tres']
-        self.entry.configure(values = theValues)
+#     def fillDropDownLst(self):
+#         if not self.dropDownFiler: return
+#         self.theValues = self.dropDownFiler()
+#         cbValues = [val[0]+val[1] for val in self.theValues]
+#         self.entry.configure(values = cbValues)
         
     def do_popup(self, event):
         if not self.popUpMenu: return
@@ -1339,8 +1385,17 @@ class RegexpFrame(tk.Frame):
         self.regexpFrame.setCompFlags(compflags)            
             
             
-    def setActiveUrl(self, url):
-        self.urlFrame.setActiveUrl(url)
+    def setActiveUrl(self, url = None):
+        rgfrm = self.regexpFrame
+        rgxNode = rgfrm.cbIndex.get()
+        if rgxNode: rgfrm.entry.set('')
+        if url: self.urlFrame.setActiveUrl(url)
+        if rgxNode:
+            theValues = rgfrm.dropDownFiler()
+            ndxpos = [val[0] for val in theValues]
+            actpos = ndxpos.index(rgxNode)
+            nxtpos = ndxpos.index(theValues[actpos][2])
+            rgfrm.entry.current(nxtpos)
         
     def getActiveUrl(self):
         return self.urlFrame.getActiveUrl()

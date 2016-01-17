@@ -1123,8 +1123,8 @@ class AppSettingDialog(tk.Toplevel):
         topPane.pack(side = tk.TOP, fill = tk.BOTH, expand = 1)
         topPane.grid_propagate(0)
         self.topPane = topPane
-        self.leftPane = tk.Frame(topPane, relief = tk.RIDGE, bd = 5, bg = 'white', padx = 3, pady = 3)
-        self.leftPane.pack(side = tk.LEFT, fill = tk.Y)
+#         self.leftPane = tk.Frame(topPane, relief = tk.RIDGE, bd = 5, bg = 'white', padx = 3, pady = 3)
+#         self.leftPane.pack(side = tk.LEFT, fill = tk.Y)
         self.setFrameFromXML()
         self.rightPane = None
         self.selOption(0)
@@ -1152,9 +1152,12 @@ class AppSettingDialog(tk.Toplevel):
             
     def setFrameFromXML(self):
         root = self.root
-        intVar = tk.IntVar()
-        self.intVar = intVar
-        for k, elem in enumerate(root.findall('category')):
+        self.intVar = tk.IntVar()
+        categories = root.findall('category')
+        if len(categories) <= 1: return
+        self.leftPane = tk.Frame(self.topPane, relief = tk.RIDGE, bd = 5, bg = 'white', padx = 3, pady = 3)
+        self.leftPane.pack(side = tk.LEFT, fill = tk.Y)
+        for k, elem in enumerate(categories):
             boton = tk.Radiobutton(self.leftPane, text = elem.get('label'), value = k, variable = self.intVar, command = partial(self.selOption,k), indicatoron = 0)
             boton.pack(side = tk.TOP, fill = tk.X)
         

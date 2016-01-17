@@ -91,16 +91,19 @@ def openUrl(urlToOpen, validate = False):
         dialog.notification('Url error', 'It was imposible to locate Url', xbmcgui.NOTIFICATION_INFO, 5000)
         toReturn = None
     else:
-        data = url.read()
-        if "text" in url.headers.gettype():
-            encoding = None
-            if 'content-type' in url.headers:
-                content_type = url.headers['content-type'].lower()
-                match = re.search('charset=(\S+)', content_type)
-                if match: charset = match.group(1)
-            charset = encoding or 'iso-8859-1'
-            data = data.decode(charset, 'replace')
-        toReturn = url.geturl() if validate else (url.geturl(), data) 
+        if validate:
+            toReturn = url.geturl()
+        else:
+            data = url.read()
+            if "text" in url.headers.gettype():
+                encoding = None
+                if 'content-type' in url.headers:
+                    content_type = url.headers['content-type'].lower()
+                    match = re.search('charset=(\S+)', content_type)
+                    if match: charset = match.group(1)
+                charset = encoding or 'iso-8859-1'
+                data = data.decode(charset, 'replace')
+            toReturn = (url.geturl(), data) 
         url.close()
     return toReturn
 
@@ -136,7 +139,7 @@ def parseUrlContent(url, data, regexp, compFlags = None, posIni = 0, posFin = 0)
     url_vars = ['url', 'videoUrl', 'iconImage', 'thumbnailImage']
     for key in set(url_vars).intersection(patternVars):
         for elem in matchs:
-            elem[key] = urlparse.urljoin(url, elem[key])
+            elem[key] = urlparse.urljoin(url, elem[key].replace('https:', 'http:'))
     if matchs and 'label' in patternVars:
         srchKeys = [key for key in patternVars  if key.startswith('label') and key != 'label2']
         srchKeys.sort()
@@ -155,7 +158,7 @@ def getMenu(url, menudef, optionMenu):
 def build_url(base_url, query):
     return base_url + '?' + urllib.urlencode(query, doseq = 1)
 
-def makeXbmcMenu(addon_handle, base_url, menuContent):
+def makeXbmcMenuOLD(addon_handle, base_url, menuContent):
     import xbmc
     import xbmcgui
     import xbmcplugin
@@ -164,6 +167,10 @@ def makeXbmcMenu(addon_handle, base_url, menuContent):
     for elem in menuContent:
         urlTags, parameters, otherParam = elem[0], elem[1], elem[2]
         isFolder = parameters.pop('isFolder')
+        if otherParam and otherParam.has_key('addonInfo'):
+            meta = otherParam['addonInfo']
+            parameters['iconImage'] = meta['cover_url']
+            parameters['thumbnailImage'] = parameters['iconImage']
         if parameters.has_key('iconImage'):
             if not parameters.has_key('thumbnailImage'):
                 parameters['thumbnailImage'] = parameters['iconImage'] 
@@ -188,12 +195,113 @@ def makeXbmcMenu(addon_handle, base_url, menuContent):
             if otherParam.has_key('addonInfo'):
                 addonInfo = otherParam.pop('addonInfo')        
                 li.setInfo('video', addonInfo)
+                if addonInfo['backdrop_url']: li.setProperty('fanart_image', addonInfo['backdrop_url'])
             if otherParam.has_key('contextMenu'):
                 contextMenu = otherParam.pop('contextMenu')
                 li.addContextMenuItems(contextMenu['lista'], replaceItems = contextMenu['replaceItems'])
         xbmcplugin.addDirectoryItem(handle=addon_handle, url=url,
-                                        listitem=li, isFolder=isFolder)
+                                        listitem=li, isFolder=isFolder, totalItems=len(menuContent))
     xbmcplugin.endOfDirectory(addon_handle)
+
+def makeXbmcMenu(addon_handle, base_url, menuContent):
+    import xbmc
+    import xbmcgui
+    import xbmcplugin
+    import xbmcaddon
+    from metahandler import metahandlers
+    
+    mg = metahandlers.MetaData()
+    tv = metahandlers.TheTVDB()
+    media = ''
+    viewMode = ''
+    for elem in menuContent:
+        urlTags, parameters, otherParam = elem[0], elem[1], elem[2]
+        otherParam = otherParam or {}
+        isFolder = parameters.pop('isFolder')
+        if otherParam.has_key('viewMode'):
+            viewMode = otherParam['viewMode']
+        addonInfo = None
+        while otherParam.has_key('addonInfo'):
+            meta = otherParam['addonInfo']
+            media, metaregexp = meta.partition('*')[0:3:2]
+            metaKwargs = re.match(metaregexp ,parameters['label'].replace(u'\u2019',"'"))
+            if not metaKwargs: break
+            kwargs = metaKwargs.groupdict().copy()
+            if media in ['movie', 'tvshow']:
+                name = kwargs['name']
+                try: 
+                    addonInfo = mg.get_meta(media, **kwargs)
+                except:
+                    break
+                else:
+                    if not addonInfo['imdb_id'] and media == 'tvshow':
+                        showList = tv.get_matching_shows(name)
+                        if showList:
+                            kwargs.update(zip(['tmdb_id', 'name','imdb_id'], showList[0]))
+                            urlTags['imdb_id'] = kwargs['imdb_id']
+                            urlTags['name'] = kwargs['name']
+                        addonInfo = mg.get_meta(media, **kwargs)
+                    otherParam['labeldef'] = name + ' (' + str(addonInfo['year']) + ')'
+                    
+            elif media in ['season', 'episode']:
+                imdb_id = urlTags.get('imdb_id', '')
+                name =  urlTags.get('name', None) or kwargs.get('name', None)
+                if not name: break
+                if not imdb_id:
+                    try:
+                        showList = tv.get_matching_shows(name)
+                    except:
+                        break
+                    else:
+                        if showList: name, imdb_id = showList[0][1:]
+                if imdb_id:
+                    if media == 'season':
+                        addonInfo = mg.get_seasons(name, imdb_id, kwargs['season'])[0]
+                        urlTags['season'] = kwargs['season']
+                    else:
+                        season = urlTags.get('season', None) or kwargs['season']
+                        episode = kwargs['episode']
+                        addonInfo = mg.get_episode_meta(name, imdb_id, season, episode)
+                        otherParam['labeldef'] = name + ' S' + season.rjust(2, '0') + 'E' + episode.rjust(2, '0') 
+            break
+        
+        if addonInfo:
+            parameters['iconImage'] = addonInfo['cover_url'] or parameters.get('iconImage', '')
+            parameters['thumbnailImage'] = parameters['iconImage']
+        if parameters.has_key('iconImage'):
+            if not parameters.has_key('thumbnailImage'):
+                parameters['thumbnailImage'] = parameters['iconImage'] 
+        if urlTags.has_key('icondefflag'):
+            urlTags.pop('icondefflag')
+            if parameters.has_key('iconImage'): urlTags['icondef'] = parameters['iconImage']
+        if urlTags.has_key('labeldefflag'):
+            urlTags.pop('labeldefflag')
+            urlTags['labeldef'] = otherParam.get('labeldef',parameters['label'])
+        try:
+            url = build_url(base_url, urlTags)
+        except:
+            print urlTags
+            
+        if not parameters.has_key('iconImage'):
+            iconDefault = 'defaultFolder.png' if isFolder else 'DefaultVideo.png'
+            parameters['iconImage'] = urlTags.get('icondef', None) or iconDefault 
+            
+        li = xbmcgui.ListItem(**parameters)
+        li.setProperty('IsPlayable', 'false' if isFolder else 'true')
+        if addonInfo:
+            li.setInfo('video', addonInfo)
+            if addonInfo['backdrop_url']: li.setProperty('fanart_image', addonInfo['backdrop_url'])
+        if otherParam.has_key('contextMenu'): 
+            contextMenu = otherParam.pop('contextMenu')
+            li.addContextMenuItems(contextMenu['lista'], replaceItems = contextMenu['replaceItems'])
+        xbmcplugin.addDirectoryItem(handle=addon_handle, url=url,
+                                        listitem=li, isFolder=isFolder, totalItems=len(menuContent))
+        
+    if media: xbmcplugin.setContent(addon_handle, media + 's')
+    if viewMode: xbmc.executebuiltin("Container.SetViewMode(%s)" % viewMode)
+                                     
+    xbmcplugin.endOfDirectory(addon_handle)
+
     
 def getMenuHeaderFooter(param, args, data, menus):
     htmlUnescape = HTMLParser.HTMLParser().unescape
@@ -213,12 +321,12 @@ def getMenuHeaderFooter(param, args, data, menus):
         if not opmenu: continue
         tags = CustomRegEx.compile(opvalues).groupindex.keys()
         if 'url' in tags:
-            menuUrl = [elem[tags.index('url')] for elem in opmenu] if len(tags) > 1 else opmenu[0]
+            menuUrl = [htmlUnescape(elem[tags.index('url')]) for elem in opmenu] if len(tags) > 1 else [htmlUnescape(opmenu[0].replace('\/', '/'))]
         if 'label' in tags:
             menuLabel = map(htmlUnescape, [elem[tags.index('label')] for elem in opmenu])
         else:
             placeHolder = 'Next >>>' if param == 'footer' else 'Header >>>'
-            menuLabel = len(menuUrl)*[placeHolder]
+            menuLabel = len(opmenu)*[placeHolder]
         if len(opmenu) == 1: opLabel = menuLabel[0]
         if 'varvalue' in tags: 
             varValue = [elem[tags.index('varvalue')] for elem in opmenu] if len(tags) > 1 else opmenu
@@ -247,6 +355,8 @@ def getMenuHeaderFooter(param, args, data, menus):
                     for elem in varValue:
                         queryDict[varName] = elem
                         menuUrl.append('?' + urllib.urlencode(queryDict))
+            else:
+                opdefault = htmlUnescape(match.group(1) if match else '')
                 
         paramDict = dict([(key, value[0]) for key, value in args.items() if hasattr(value, "__getitem__") and key not in ["header", "footer"]])
         paramDict.update({'section':param, 'url':url, param:k, 'menu':menuId})

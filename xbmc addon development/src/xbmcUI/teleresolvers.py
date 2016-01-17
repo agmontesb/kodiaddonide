@@ -73,10 +73,11 @@ def baseNtoInt(string, base, strVal = ''):
     return value
 
 
-def videomega(videoId, encHeaders = ''):
+def videomega(videoId, headers = None):
     strVal = '0123456789abcdefghijklmnopqrstuvwxyz'
-    url = 'http://videomega.tv/cdn.php?ref=%s' % (videoId)
-    if encHeaders: url = url + encHeaders
+    headers = headers or {}
+    headers['User-Agent'] = MOBILE_BROWSER
+    url = 'http://videomega.tv/cdn.php?ref=%s<headers>%s' % (videoId, urllib.urlencode(headers))
     content = basicFunc.openUrl(url)[1]
     pattern = "\(\'(?P<patron>\$.+?;)\'.+?\'(?P<lista>.+?)\'"
     m = re.search(pattern, content)
@@ -85,7 +86,7 @@ def videomega(videoId, encHeaders = ''):
     repFunc = lambda x: lista[strVal.index(x.group())] or x.group()
     content = re.sub(r'\b\w+\b', repFunc, patron)
     m = re.search('\"(http.+?)\"', content)
-    urlStr = m.group(1)
+    urlStr = m.group(1) + '|' + headers['User-Agent']
     return urlStr
     
     
@@ -126,7 +127,7 @@ def netu(videoId, encHeaders = ''):
     t1 = string.maketrans(dec_a + dec_b, dec_b + dec_a)
     encUrlStr = str(data['file']).translate(t1)
     urlStr = base64.decodestring(encUrlStr) + '='
-    return urlStr
+    return urlStr + '|' + urllib.urlencode({'User-Agent':MOBILE_BROWSER})
 
 def powvideo(videoId, encHeaders = ''):
     strVal = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -163,8 +164,9 @@ def gamovideo(videoId, encHeaders = ''):
         patron = re.sub('\\b' + tag + '\\b', lista[nTags] or tag, patron)
     pattern = r'file:"(?P<url>http:[^"]+\.mp4)"'
     m = re.search(pattern, patron)
-    urlStr = m.group(1) + '|' + MOBILE_BROWSER
+    urlStr = m.group(1) + '|' + urllib.urlencode({'User-Agent':MOBILE_BROWSER})
     return urlStr
+gamo = gamovideo
 
 def up2stream(videoId, encHeaders = ''):
     strVal = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -182,6 +184,7 @@ def up2stream(videoId, encHeaders = ''):
     m = re.search(pattern, patron)
     urlStr = m.group(1)
     return urlStr
+up2 = up2stream
     
 def transOpenload(videoId, encHeaders = ''):
     '''
@@ -303,9 +306,10 @@ return: "\"
     code = code.decode('unicode-escape')
     code = code.replace('"""','"')
     pass
-    
-def openload(videoId, encHeaders = ''):
-    headers = {'User-Agent':MOBILE_BROWSER}
+
+def openload(videoId, headers = None):
+    headers = headers or {}
+    headers['User-Agent'] = MOBILE_BROWSER
     encodeHeaders = urllib.urlencode(headers)
     urlStr = 'https://openload.co/embed/%s/<headers>%s' % (videoId, encodeHeaders)
     content = basicFunc.openUrl(urlStr)[1]    
@@ -334,27 +338,34 @@ def openload(videoId, encHeaders = ''):
     dic_pat4 = r"(?<=[{,])([^: ]+)(?=:)"
     
     puzzle = re.sub(dic_pat1, "'[object object]_'", puzzle)
-    puzzle = re.sub(dic_pat2, lambda x: "('[object object]'+str(%s))" % x.group(1), puzzle)
+    puzzle = re.sub(dic_pat2, lambda x: "('[object object]'+str((%s)))" % x.group(1), puzzle)
     puzzle = re.sub(dic_pat3, lambda x: "(%s)['%s']" % (dicId, x.group(1)), puzzle)
     puzzle = re.sub(dic_pat4, lambda x: "'%s'" % x.group(1), puzzle)
 
     pat_str1 = r"\((\(.+?\)|[A-Z])\+\'_\'\)"
     pat_str2 = r"\([^()]+\)\[[A-Z]\]\[[A-Z]\]"
-    puzzle = re.sub(pat_str1, lambda x: "(str(%s)+'_')" % x.group(1), puzzle)
+    pat_str3 = r"(?<=;)([^+]+)\+=([^;]+)"
+    puzzle = re.sub(pat_str1, lambda x: "(str((%s))+'_')" % x.group(1), puzzle)
     puzzle = re.sub(pat_str2, "'function'", puzzle)
+    puzzle = re.sub(pat_str3, lambda x: "%s=%s+%s" % (x.group(1), x.group(1), x.group(2)), puzzle)
 
     codeGlb = {}    
     code = puzzle.split(';')
     code.pop()
     code[0] = code[0][:2] + "'undefined'"
-    for k, linea in enumerate(code[:-1]):
-        try:
-            exec(linea, codeGlb)
-        except:
-            print 'Linea %s con errores ' % k, linea
-            code[k] = linea.split('=')[0] + '=' + "'\\\\'"
-            print 'Se corrige como ', code[k]
-            exec(code[k], codeGlb)
+    for linea in code[:-1]:
+        linea = re.sub(r"\(([A-Z]+)\)", lambda x: x.group(1), linea)
+        varss = re.split(r"(?<=[_a-zA-Z\]])=(?=[^=])",linea)
+        value = eval(varss.pop(), codeGlb)
+        for var in varss:
+            m = re.match(r"([^\[]+)\[([^\]]+)\]", var)
+            if m:
+                var, key = m.groups()
+                key = eval(key, codeGlb)
+                codeGlb[var][key] = value
+            else:
+                codeGlb[var] = value
+        
     
     linea = code[-1]
     linea = re.sub(r"\(([A-Z]+)\)", lambda x: x.group(1), linea)
@@ -366,8 +377,78 @@ def openload(videoId, encHeaders = ''):
     linea = linea.replace('+', '')
     linea = linea.decode('unicode-escape')
     m = re.search(r'http.+?true', linea)
-    urlStr = '%s|%s' % (m.group(),encodeHeaders)
-    return urlStr
+    urlStr = basicFunc.openUrl(m.group(), True)
+    urlStr = '%s|%s' % (m.group(),urllib.urlencode({'User-Agent':MOBILE_BROWSER}))
+    return urlStr    
+
+
+if __name__ == "__main__":
+    
+    
+    def openloadORIG(videoId, encHeaders = ''):
+        headers = {'User-Agent':MOBILE_BROWSER}
+        encodeHeaders = urllib.urlencode(headers)
+        urlStr = 'https://openload.co/embed/%s/<headers>%s' % (videoId, encodeHeaders)
+        content = basicFunc.openUrl(urlStr)[1]    
+        varTags = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        pattern = r'(?#<video script.*=puzzle>)'
+        puzzle = CustomRegEx.findall(pattern, content)[0][0]
+        vars = sorted(set(re.findall(r'\(([^=)(]+)\) *=', puzzle)))
+        keys1 = re.findall(r', *(?P<key>[^: ]+) *:', puzzle)
+        keys2 = re.findall(r"\(ﾟДﾟ\) *\[[^']+\] *=", puzzle)
+        keys = sorted(set(keys1 + keys2))
+        totVars = vars + keys
+        for k in range(len(vars)):
+            puzzle = puzzle.replace(vars[k], varTags[k])
+        for k in range(len(keys)):
+            puzzle = puzzle.replace(keys[k], varTags[-k - 1])
+    #     puzzle = puzzle.replace('\xef\xbe\x89'.decode('utf-8'), '').replace(' ','')
+        puzzle = re.sub(r'[ \x80-\xff]','',puzzle)
+        pat_dicId = r'\(([A-Z])\)={'
+        m = re.search(pat_dicId, puzzle)
+        assert m, 'No se encontro Id del diccionario'
+        dicId = m.group(1)
+    #     pat_obj = r"\(\(%s\)\+\\'_\\'\)" % dicId
+        dic_pat1 = r"\(\(%s\)\+\'_\'\)" % dicId
+        dic_pat2 = r"\(%s\+([^+)]+)\)" % dicId
+        dic_pat3 = r"\(%s\)\.(.+?)\b" % dicId
+        dic_pat4 = r"(?<=[{,])([^: ]+)(?=:)"
+        
+        puzzle = re.sub(dic_pat1, "'[object object]_'", puzzle)
+        puzzle = re.sub(dic_pat2, lambda x: "('[object object]'+str(%s))" % x.group(1), puzzle)
+        puzzle = re.sub(dic_pat3, lambda x: "(%s)['%s']" % (dicId, x.group(1)), puzzle)
+        puzzle = re.sub(dic_pat4, lambda x: "'%s'" % x.group(1), puzzle)
+    
+        pat_str1 = r"\((\(.+?\)|[A-Z])\+\'_\'\)"
+        pat_str2 = r"\([^()]+\)\[[A-Z]\]\[[A-Z]\]"
+        puzzle = re.sub(pat_str1, lambda x: "(str(%s)+'_')" % x.group(1), puzzle)
+        puzzle = re.sub(pat_str2, "'function'", puzzle)
+    
+        codeGlb = {}    
+        code = puzzle.split(';')
+        code.pop()
+        code[0] = code[0][:2] + "'undefined'"
+#         for k, linea in enumerate(code[:-1]):
+#             try:
+#                 exec(linea, codeGlb)
+#             except:
+#                 print 'Linea %s con errores ' % k, linea
+#                 code[k] = linea.split('=')[0] + '=' + "'\\\\'"
+#                 print 'Se corrige como ', code[k]
+#                 exec(code[k], codeGlb)
+        
+        linea = code[-1]
+        linea = re.sub(r"\(([A-Z]+)\)", lambda x: x.group(1), linea)
+        linea = re.sub(r"\([oc]\^_\^o\)", lambda x: "%s" % eval(x.group(), codeGlb), linea)
+        while re.search(r"\([^)\]'\[(]+\)", linea):        
+            linea = re.sub(r"\([^)\]'\[(]+\)", lambda x: "%s" % eval(x.group(), codeGlb), linea)
+        linea = re.sub(r"[A-Z](?=[^\]\[])", lambda x: "%s" % eval(x.group(), codeGlb), linea)
+        linea = re.sub(r"E\[[\'_A-Z]+\]", lambda x: "%s" % eval(x.group(), codeGlb), linea)
+        linea = linea.replace('+', '')
+        linea = linea.decode('unicode-escape')
+        m = re.search(r'http.+?true', linea)
+        urlStr = '%s|%s' % (m.group(),encodeHeaders)
+        return urlStr
     
 def thevideo(videoId, encHeaders = ''):
     headers = {'User-Agent':DESKTOP_BROWSER, 
@@ -393,9 +474,10 @@ def thevideo(videoId, encHeaders = ''):
     return href
     pass
 
-def vidzi(videoId, encHeaders = ''):
+def vidzi(videoId, headers = None):
     strVal = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    headers = {'User-Agent':MOBILE_BROWSER}
+    headers = headers or {}
+    headers['User-Agent'] = MOBILE_BROWSER
     encodeHeaders = urllib.urlencode(headers) 
     url = 'http://vidzi.tv/%s.html<headers>%s' % (videoId, encodeHeaders)
     content = basicFunc.openUrl(url)[1]
@@ -413,19 +495,63 @@ def vidzi(videoId, encHeaders = ''):
     sources = CustomRegEx.findall(pattern,patron)
     return sources.pop()
 
+def allmyvideos(videoId, headers = None):
+    headers = headers or {}
+    headers['User-Agent'] = MOBILE_BROWSER
+    encodeHeaders = urllib.urlencode(headers) 
+    url = 'http://allmyvideos.net/%s<headers>%s' % (videoId, encodeHeaders)
+    content = basicFunc.openUrl(url)[1]
+    pattern = r'(?#<form .input<name=name value=value>*>)'
+    formVars = CustomRegEx.findall(pattern, content)
+    qte = urllib.quote
+    postdata = '&'.join(map(lambda x: '='.join(x),[(var1, qte(var2) if var2 else '') for var1, var2 in formVars]))
+    urlStr = 'http://allmyvideos.net/%s<post>%s<headers>%s' % (videoId, postdata, encodeHeaders)
+    content = basicFunc.openUrl(urlStr)[1]
+    pattern = r'"file" : "(?P<url>[^"]+)".+?"label" : "(?P<label>[^"]+)"'
+    sources = re.findall(pattern, content, re.DOTALL)
+    href, res = sources.pop()
+    urlStr = '%s|%s' % (href,urllib.urlencode({'User-Agent':MOBILE_BROWSER}))
+    return urlStr
+    pass
+
+def vidto(videoId, headers = None):
+    headers = headers or {}
+    headers['User-Agent'] = MOBILE_BROWSER
+    encodeHeaders = urllib.urlencode(headers) 
+    url = 'http://vidto.me/%s.html<headers>%s' % (videoId, encodeHeaders)
+    content = basicFunc.openUrl(url)[1]
+    pattern = r'(?#<Form method="POST".input<type="hidden" name=name value=value>*>)'
+    formVars = CustomRegEx.findall(pattern, content)
+    qte = urllib.quote
+    postdata = '&'.join(map(lambda x: '='.join(x),[(var1, qte(var2) if var2 else '') for var1, var2 in formVars]))
+    urlStr = 'http://vidto.me/%s.html<post>%s<headers>%s' % (videoId, postdata, encodeHeaders)
+    content = basicFunc.openUrl(urlStr)[1]
+    pattern = r'(?#<a class="player-url" href=url>)'
+    sources = CustomRegEx.findall(pattern, content, re.DOTALL)
+    href, = sources.pop()
+    urlStr = '%s|%s' % (href,urllib.urlencode({'User-Agent':MOBILE_BROWSER}))
+    return urlStr
+    pass
+    
 
 
 if __name__ == "__main__":
     headers = {'Referer': 'http://www.novelashdgratis.tv/'}
     urllib.urlencode(headers)
-    resp = vidzi('exrexy8vni9q')
+#     resp = vidzi('exrexy8vni9q')
 #     resp = thevideo('tv1j6shq1imt')
 #     resp = videomega('tBmn3h4X3AA3X4h3nmBt', '<headers>' + urllib.urlencode(headers))
+#     resp = videomega('Zo36tXpqT99TqpXt63oZ', '<headers>' + urllib.urlencode(headers))
 #     resp = up2stream('tBmn3h4X3AA3X4h3nmBt')
 #     resp = gamovideo('o7vz5mb3kvls')
 #     resp = netu('D5RM53HN4X3M')
 #     resp = powvideo('x5gab53lm207')
 #    https://openload.co/embed/EzDsB4C1Lk8/
 #     resp = openload('EzDsB4C1Lk8')
+#     resp = openload('26QGX1Z_HUY')
+#     resp = allmyvideos('gnt0r39xr857')
+# http://vidto.me/4203zxamwebj.html
+#     resp = vidto('4203zxamwebj')
+    resp = openload('oKHEg-ffdLQ')
 
     pass
