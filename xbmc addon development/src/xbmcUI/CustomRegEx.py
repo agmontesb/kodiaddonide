@@ -176,7 +176,8 @@ class ExtRegexParser:
             tagList[m[0]][1] = m[1]
         return toProcess
 
-    def getAttrDict(self, data, offset = 0, noTag = True):
+    @staticmethod
+    def getAttrDict(data, offset = 0, noTag = True):
     
         def skipCharsInSet(strvar, aSet, npos = 0, peek = False):
             m = re.match('[' + aSet + ']+', strvar[npos:])
@@ -188,8 +189,8 @@ class ExtRegexParser:
             return (res, npos + len(res)) if not peek else res
         
         WHITESPACE = ' \t\n\r\f\v'
-        pini = 0
-        pfin = data.find('>') + 1
+        pini = offset
+        pfin = data.find('>', pini) + 1
         tag = data[pini:pfin].strip('/>') + '>'
 
         npos = 1
@@ -212,7 +213,7 @@ class ExtRegexParser:
                     attr = sep
                     while 1:
                         attrInc, posfin = getCharsNotInSet(tag, '\'"', posfin)
-                        if attrInc[-1] in '=>': break
+                        if len(attr) > 1 and attrInc[-1] in '=>' and attr[0] == attr[-1]: break
                         attr += attrInc
                         sep, posfin = skipCharsInSet(tag, '\'"', posfin)
                         attr += sep
@@ -696,7 +697,7 @@ def ExtCompile(regexPattern, flags = 0):
                         raise re.error(v)
                     varList.append([attrName, varName])
                     if VAR != varName:
-                        tagDict[attrKey] = re.compile(" \s*([ \S]*?)\s* " + r'\Z')
+                        tagDict[attrKey] = re.compile("\s*([ \S]*?)\s*" + r'\Z')
                     
                     if pattern[npos] != '=': break
                     npos += 1
@@ -984,6 +985,11 @@ def subn(pattern, repl, string, count = 0, flags = 0):
     
 
 if __name__ == "__main__":
+
+    content = '''<form name="file" enctype="multipart/form-data" action="http://d5387.allmyvideos.net/cgi-bin/upload.cgi?upload_id=" method="post" onSubmit="return StartUpload(this);">'''
+    answ = ExtRegexParser.getAttrDict(content)
+
+
 
     
 #     testStr = ['<uno><dos><!--Comentario en <dos>--></dos><script f="uno">script en <uno></script></uno>', 

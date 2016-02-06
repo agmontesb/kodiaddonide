@@ -11,7 +11,7 @@ import tkFileDialog
 import tkSimpleDialog
 import re
 import xml.etree.ElementTree as ET
-from xbmcStubs.xbmc import translatePath
+from xbmc import translatePath
 import keyword
 import FileGenerator
 from SintaxEditor import PYTHONSINTAX, XMLSINTAX

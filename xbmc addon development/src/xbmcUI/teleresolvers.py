@@ -382,6 +382,7 @@ def openload(videoId, headers = None):
     return urlStr    
 
 
+
 if __name__ == "__main__":
     
     
@@ -533,7 +534,26 @@ def vidto(videoId, headers = None):
     return urlStr
     pass
     
-
+def putstream(videoId, headers = None):
+    headers = headers or {}
+    headers['User-Agent'] = MOBILE_BROWSER
+    encodeHeaders = urllib.urlencode(headers)
+    urlStr = 'http://putstream.com/embed-%s.html<headers>%s' % (videoId, encodeHeaders)
+#     content = basicFunc.openUrl(urlStr)[1]    
+#     pattern = r'(?#<Form .input<type="hidden" name=name value=value>*>)'
+#     formVars = CustomRegEx.findall(pattern, content)
+#     qte = urllib.quote
+#     headers['Referer'] = 'http://putstream.com/%s.html' % videoId
+#     postdata = '&'.join(map(lambda x: '='.join(x),[(var1, qte(var2) if var2 else '') for var1, var2 in formVars]))
+#     urlStr = 'http://putstream.com/dl<post>%s<headers>%s' % (postdata, encodeHeaders)
+    content = basicFunc.openUrl(urlStr)[1]
+    pattern = r'file:"([^"]+)",label:"([^"]+)"'
+    sources = re.findall(pattern, content)
+    if not sources: return ''
+    href, resol = sources.pop()
+    headers = {'User-Agent':MOBILE_BROWSER}
+    urlStr = '%s|%s' % (href,urllib.urlencode(headers))
+    return urlStr
 
 if __name__ == "__main__":
     headers = {'Referer': 'http://www.novelashdgratis.tv/'}
@@ -549,9 +569,10 @@ if __name__ == "__main__":
 #    https://openload.co/embed/EzDsB4C1Lk8/
 #     resp = openload('EzDsB4C1Lk8')
 #     resp = openload('26QGX1Z_HUY')
-#     resp = allmyvideos('gnt0r39xr857')
+    resp = allmyvideos('gnt0r39xr857')
 # http://vidto.me/4203zxamwebj.html
 #     resp = vidto('4203zxamwebj')
-    resp = openload('oKHEg-ffdLQ')
+#     resp = openload('oKHEg-ffdLQ')
+#     resp = putstream('5uzd36befkrn')
 
     pass

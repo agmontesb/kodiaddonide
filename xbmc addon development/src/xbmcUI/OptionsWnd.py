@@ -21,6 +21,7 @@ import re
 import shutil
 import zipfile
 from likeXbmc import translatePath
+import operator
 
 import StringIO
 from xml.dom.minicompat import defproperty
@@ -36,7 +37,7 @@ def widgetFactory(master, settings, selPane):
         elif setting.get('type') == 'text':
             dummy = settText(master, **setting.attrib)
         elif setting.get('type') == 'optionlst':
-            dummy = settOptionList(master, **setting.attrib) 
+            dummy = settOptionList(master, **setting.attrib)
         elif setting.get('type') in ['number', 'ipaddress'] :
             dummy = settNumber(master, **setting.attrib)
         elif setting.get('type') == 'slider':
@@ -45,6 +46,8 @@ def widgetFactory(master, settings, selPane):
             dummy = settBool(master, **setting.attrib)
         elif setting.get('type') in ['enum', 'labelenum']:
             dummy = settEnum(master, **setting.attrib)
+        elif setting.get('type') == 'drpdwnlst':
+            dummy = settDDList(master, **setting.attrib)
         elif setting.get('type') in ["file", "audio", "video", "image","executable"]:
             dummy = settFile(master, **setting.attrib)
         elif setting.get('type') == 'folder':
@@ -157,7 +160,14 @@ class scrolledFrame(tk.Frame):
         enableEc = enableEc.replace('not ', '').replace('*', '+')
         eq = lt = gt = lambda x, a: [x]
         vars = eval(enableEc)
-        return [elem for k, elem in enumerate(vars) if elem not in vars[0:k]]
+        try:
+            retval = set(vars)
+        except:
+            retval = []
+        else:
+            retval = list(retval)
+        return retval
+        # return [elem for k, elem in enumerate(vars) if elem not in vars[0:k]]
          
         
     def getAbsEcuation(self, pos, enableEc):
@@ -192,8 +202,17 @@ class scrolledFrame(tk.Frame):
         allWidgets = self.frame.children.values() 
         return [aWidget for aWidget in allWidgets if filterFunc(aWidget)] if filterFunc else allWidgets
 
+    def getAllSettings(self, keyfunc = None):
+        keyfunc = keyfunc or operator.attrgetter('id')
+        allwidgets = self.widgets(filterFunc = lambda widget: hasattr(widget, 'id'))
+        allwidgets.sort(key = keyfunc)
+        return [widget.getSettingPair(tId = True) for widget in allwidgets]
+
+
+
 class baseWidget(tk.Frame):
     def __init__(self, master, **options):
+        self._id = options.pop('id')
         wdgName = options.pop('name').lower()
         if options.has_key('varType'): self.setVarType(options.pop('varType')) 
         self.default = None
@@ -209,8 +228,9 @@ class baseWidget(tk.Frame):
         else: self.value = tk.StringVar()
         
 
-    def getSettingPair(self):
-        return (self.id, self.getValue())
+    def getSettingPair(self, tId = False):
+        id = self._id if tId else self.id
+        return (id, self.getValue())
     
     def isValueSetToDefault(self):
         return self.getValue() == self.default
@@ -231,7 +251,7 @@ class baseWidget(tk.Frame):
 class settLabel(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
                 
@@ -314,7 +334,7 @@ class myScrolledList(tk.Frame):
 class settFileenum(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -344,7 +364,7 @@ class settFileenum(baseWidget):
 class settFolder(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -363,7 +383,7 @@ class settFolder(baseWidget):
 class settFile(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -378,12 +398,41 @@ class settFile(baseWidget):
         fileName = tkFileDialog.askopenfilename()
         if fileName:
             self.value.set(fileName)
-        
+
+class settDDList(baseWidget):
+    def __init__(self, master, **options):
+        wdgName = options.pop('name').lower()
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
+        self.setGUI(options)
+        self.name = wdgName
+
+    def setGUI(self, options):
+        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
+        self.id = options.get('id').lower()
+        self.default = options.get('default', '')
+        self.spBoxValues = options.get('values').split('|')
+        self.lvalues = spBoxValues = options.get('lvalues').split('|')
+        tk.Spinbox(self, name = self.id, textvariable = self.value, values = spBoxValues).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
+        self.setValue(self.default)
+
+    def setValue(self, value):
+        try:
+            ndx = self.spBoxValues.index(value)
+        except:
+            return
+        self.value.set(self.lvalues[ndx])
+
+    def getValue(self):
+        try:
+            ndx = self.lvalues.index(self.value.get())
+        except:
+            return
+        return self.spBoxValues[ndx]
 
 class settEnum(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -413,7 +462,7 @@ class settEnum(baseWidget):
 class settOptionList(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -497,7 +546,7 @@ class settOptionList(baseWidget):
 class settSlider(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -515,7 +564,7 @@ class settSlider(baseWidget):
 class settNumber(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'string', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'string', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -546,7 +595,7 @@ class settText(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
         self.name = wdgName        
-        baseWidget.__init__(self, master, name = wdgName)
+        baseWidget.__init__(self, master, name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         
     def setGUI(self, options):
@@ -570,7 +619,7 @@ class settText(baseWidget):
 class settBool(baseWidget):
     def __init__(self, master, **options):
         wdgName = options.pop('name').lower()
-        baseWidget.__init__(self, master, varType = 'boolean', name = wdgName)
+        baseWidget.__init__(self, master, varType = 'boolean', name = wdgName, id = options.get('id', ''))
         self.setGUI(options)
         self.name = wdgName
         
@@ -581,41 +630,6 @@ class settBool(baseWidget):
         self.setValue(self.default)
         tk.Checkbutton(self, name = self.id, variable = self.value, onvalue = True, offvalue = False, anchor = tk.E).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
         
-
-class settBoolOld(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground='black', highlightthickness = 2, highlightcolor = 'green', takefocus = 1)
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1, padx = 3, pady = 3)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.BooleanVar()
-        self.default = True if options.get('default') == 'true' else False
-        self.setValue(self.default)
-        tk.Checkbutton(self, name = self.id, variable = self.value, onvalue = True, offvalue = False, anchor = tk.E).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get()
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
 
 class settSep(tk.Frame):
     def __init__(self, master, **options):
@@ -645,186 +659,6 @@ class settSep(tk.Frame):
     
     def setListener(self, function):
         pass
-
-
-class settOptionListOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower().lower()
-        self.name = wdgName        
-        tk.Frame.__init__(self, master, name = wdgName, relief = tk.GROOVE, borderwidth = 2, padx = 3, pady = 3)
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        
-    def setGUI(self, options):
-        settSep(self, name = 'label', type = 'lsep', label = options.get('label')).pack(side = tk.TOP, fill = tk.X)
-
-        self.id = options.get('id').lower().replace('.', '__')
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        
-        uFrame = tk.Frame(self)
-        uFrame.pack(side = tk.TOP, fill = tk.BOTH)
-
-        sbar = tk.Scrollbar(uFrame)
-        sbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        colHeadings = options.get('columnsheadings')
-        columnsId = map(lambda x: x.strip(),colHeadings.split(','))
-        tree = ttk.Treeview(uFrame, show = 'headings', columns = columnsId, displaycolumns = columnsId)
-        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand = 1)
-        sbar.config(command=tree.yview)                    # xlink sbar and tree
-        tree.config(yscrollcommand=sbar.set)               # move one moves other
-        for column in columnsId:
-            tree.heading(column, text = column, anchor = tk.W)
-        self.tree = tree
-        self.columnsId = columnsId
-
-        bFrame = tk.Frame(self)
-        bFrame.pack(side = tk.BOTTOM, fill = tk.X)
-        boton = tk.Button(bFrame, text = 'Add', width = 15, command = self.onAdd)
-        boton.pack(side = tk.LEFT)
-        boton = tk.Button(bFrame, text = 'Edit', width = 15, command = self.onEdit)
-        boton.pack(side = tk.LEFT)
-        boton = tk.Button(bFrame, text = 'Del', width = 15, command = self.onDel)
-        boton.pack(side = tk.RIGHT)
-        
-        self.setValue(self.default)
-        
-    def onAdd(self):
-        newLstEntry = tkSimpleDialog.askstring('Settings', 'Enter new option vith value separarated by commas')
-        if newLstEntry:
-            record = map(lambda x: x.strip(),newLstEntry.split(','))
-            self.tree.insert('', 'end', text='', values=record)
-    
-    def onEdit(self):
-        iid = self.tree.focus()
-        if iid:
-            iidValues = []
-            for col in self.columnsId:
-                iidValues.append(self.tree.set(iid, col))
-            iidValStr = ','.join(iidValues)
-            newLstEntry = tkSimpleDialog.askstring('Edit', 'Edit record', initialvalue = iidValStr)
-            if newLstEntry and iidValStr != newLstEntry:
-                record = map(lambda x: x.strip(),newLstEntry.split(','))
-                for k, col in enumerate(self.columnsId):
-                    self.tree.set(iid, col, record[k])
-
-    def onDel(self):
-        iid = self.tree.focus()
-        if iid: self.tree.delete(iid)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.getValue() == self.default
-    
-    def setValue(self, value):
-        lista = self.tree.get_children('')
-        self.tree.delete(*lista)
-        if value == '':return
-        bDatos = [map(lambda x: x.strip(),record.split(',')) for record in value.split('|')]
-        for record in bDatos:
-            self.tree.insert('', 'end', text='', values=record)
-
-    def getValue(self):
-        lista = self.tree.get_children('')
-        bDatos = []
-        for iid in lista:
-            iidValues = []
-            for col in self.columnsId:
-                iidValues.append(self.tree.set(iid, col))
-            iidValStr = ','.join(iidValues)
-            bDatos.append(iidValStr)
-        return '|'.join(bDatos)
-        
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-
-class settTextOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        self.name = wdgName        
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black')
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower().replace('.', '__')
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        tk.Entry(self, name = self.id, textvariable = self.value ).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get() if self.value.get() != '' else None 
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-    
-class settEnumOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black')
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        if options.has_key('values'):
-            spBoxValues = options.get('values').split('|')
-        else:
-            spBoxValues = options.get('lvalues').split('|')
-        tk.Spinbox(self, name = self.id, textvariable = self.value, values = spBoxValues).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        nPos = value.find('|') 
-        if nPos != -1:
-            spBoxValue = value[nPos + 1:].split('|')
-            self.children[self.id].configure(values = spBoxValue)
-            value = value[:nPos]
-        self.value.set(value)
-
-    def getValue(self, onlyValue = False):
-        if onlyValue: return self.value.get()
-        return  '|'.join([self.value.get()] + self.children[self.id].cget('values').split(' '))
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
 
 
 class settAction(tk.Frame):
@@ -859,230 +693,6 @@ class settAction(tk.Frame):
     def setListener(self, function):
         pass
         
-class settFileenumOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black')
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        spBoxValues = self.getFileList(options)
-        tk.Spinbox(self, name = self.id, textvariable = self.value, values = spBoxValues).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def getFileList(self, options):
-        basepath = os.path.abspath('.')
-        values = options.get('values','')
-        mypath = os.path.join(basepath, values)
-        if not os.path.exists(mypath): return
-        dirpath, dirnames, filenames = os.walk(mypath).next()
-        if options.get('mask', None) == '/':
-            return dirnames
-        else:
-            mask = options.get('mask', None)
-            filenames = [elem for elem in filenames if fnmatch.fnmatch(elem, mask)]
-            if options.get('hideext', 'true') == 'true':
-                filenames  = [elem.split('.')[0] for elem in filenames]
-            return filenames
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get()
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-    
-    
-class settFolderOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black')
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        tk.Button(self, name = self.id, textvariable = self.value, command = self.getFolder ).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def getFolder(self):
-        folder = tkFileDialog.askdirectory()
-        if folder:
-            self.value.set(folder)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get()
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-
-class settFileOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black')
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        tk.Button(self, name = self.id, anchor = 'e', textvariable = self.value, command = self.getFile ).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def getFile(self):
-        fileName = tkFileDialog.askopenfilename()
-        if fileName:
-            self.value.set(fileName)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get()
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-    
-class settNumberOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black', takefocus = 1)
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1, padx = 3, pady = 3)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        # valid percent substitutions (from the Tk entry man page)
-        # %d = Type of action (1=insert, 0=delete, -1 for others)
-        # %i = index of char string to be inserted/deleted, or -1
-        # %P = value of the entry if the edit is allowed
-        # %s = value of entry prior to editing
-        # %S = the text string being inserted or deleted, if any
-        # %v = the type of validation that is currently set
-        # %V = the type of validation that triggered the callback
-        #      (key, focusin, focusout, forced)
-        # %W = the tk name of the widget
-        vcmd = (self.register(self.validate), 
-                '%d', '%i', '%P', '%s', '%S', '%v', '%V', '%W')
-        tk.Entry(self, name = self.id, textvariable = self.value, validate = 'key', validatecommand = vcmd).pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        
-    def validate(self, d, i, P, s, S, v, V, W):
-        return S.isdigit()
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get()
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-    
-
-class settSliderOLD(tk.Frame):
-    def __init__(self, master, **options):
-        wdgName = options.pop('name').lower()
-        tk.Frame.__init__(self, master, name = wdgName, bd = 1, highlightbackground = 'black')
-        self.pack(side = tk.TOP, fill = tk.X, expand = 1)
-        self.setGUI(options)
-        self.name = wdgName
-        
-    def setGUI(self, options):
-        tk.Label(self, text = options.get('label')).pack(side = tk.LEFT)
-        self.id = options.get('id').lower()
-        self.value = tk.StringVar()
-        self.default = options.get('default', '')
-        self.setValue(self.default)
-        valRange = map(int,options.get('range').split(','))
-        scale = tk.Scale(self, variable = self.value, showvalue = 0, from_ = valRange[0], to = valRange[-1], orient = tk.HORIZONTAL)
-        scale.pack(side = tk.RIGHT, fill = tk.X, expand = 1)
-        if len(valRange) == 3: scale.configure(resolution = valRange[1])
-        tk.Entry(self, textvariable = self.value).pack(side = tk.RIGHT, fill = tk.X)
-        
-    def getSettingPair(self):
-        return (self.id, self.getValue())
-    
-    def isValueSetToDefault(self):
-        return self.value.get() == self.default
-    
-    def setValue(self, value):
-        self.value.set(value)
-
-    def getValue(self):
-        return self.value.get()
-    
-    def setListener(self, function):
-        self.listener = function
-        self.value.trace("w", self.callListener)
-
-    def callListener(self, *args):
-        self.listener(self.name)
-
-    
-
 
 class AppSettingDialog(tk.Toplevel):
     def __init__(self, master, xmlSettingFile, isFile = True, settings = None, title = None, dheight = 600, dwidth = 500):
@@ -1096,6 +706,7 @@ class AppSettingDialog(tk.Toplevel):
         body.pack_propagate(0)
         self.flag = 0
         self.settings = settings or {}
+        self.allSettings = None
         self.result = dict(self.settings)
         self.applySelected = False
         if isFile:
@@ -1146,6 +757,7 @@ class AppSettingDialog(tk.Toplevel):
             self.settings.update(changedSettings)
             self.applySelected = cmp(self.settings, self.result) != 0
             self.result = dict(self.settings)
+            self.allSettings = self.rightPane.getAllSettings(keyfunc = lambda x: int(x.name))
         self.Close()
         
         
@@ -1377,7 +989,8 @@ xmlWidgetsAvailable = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <setting id="addon_slider" type="slider" label ="type slider" range="10,50" default="20"/>
     <setting id="addon_bool" type="bool" label ="type bool" default="true"/>
     <setting id="addon_enum" type="enum" label="Type enum :   " default="5" values="0|1|2|3|4|5|6|7|8|9|10"/>
-    <setting id="addon_labelenum" type="enum" label="Type labelenum :   " default="label2" lvalues="label0|label1|label2|label3|label4"/>    
+    <setting id="addon_labelenum" type="enum" label="Type labelenum :   " default="label2" lvalues="label0|label1|label2|label3|label4"/>
+    <setting id="addon_labelenum" type="drpdwnlst" label="Type drpdwnlst :   " lvalues="label0|label1|label2|label3|label4" values="int0|int1|int2|int3|int4" default="int3"/>
     <setting id="addon_file" type="file" label="Type file:   " default=""/>
     <setting id="addon_audio" type="audio" label="Type audio:   " default=""/>
     <setting id="addon_video" type="video" label="Type video:   " default=""/>

@@ -11,7 +11,7 @@ import pytest
 import re
 
 import xbmcUI.CustomRegEx as CustomRegEx
-from xbmcUI import CustomRegEx
+import CustomRegEx
 
 def ExtCompObjEquality(a , b):
     return (a.tags, a.varList) == (b.tags, b.varList)

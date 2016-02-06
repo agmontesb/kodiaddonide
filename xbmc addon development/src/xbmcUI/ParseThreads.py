@@ -291,7 +291,7 @@ class RegexpBar(tk.Frame):
                 if self.cbIndex.get() + pattern not in cbValues: self.cbIndex.set('') 
         self.formatContent()
         if self.cbIndex.get():
-            self.extreme('<<')
+#             self.extreme('<<')
             self.textWidget.focus_force() 
         pass
             
@@ -534,14 +534,17 @@ class NavigationBar(tk.Frame):
         self.net = network.network(initConf, defDirectory = bp['working-dir'])        
         
     def setActiveUrl(self, url):
-        activeUrl = self.normUrl(self.activeUrl.get())
-        url = urlparse.urljoin(activeUrl, url)
-        self.activeUrl.set(self.unNormUrl(url))
+        if not url.startswith('curl'):
+            activeUrl = self.normUrl(self.activeUrl.get())
+            url = urlparse.urljoin(activeUrl, url)
+            url = self.unNormUrl(url)
+        self.activeUrl.set(url)
         self.returnKey()
             
     def getActiveUrl(self):
-        rawUrl = self.activeUrl.get()
-        return self.net.getValuesFromUrl(rawUrl) if rawUrl else ''
+        # rawUrl = self.activeUrl.get()
+        # return self.net.getValuesFromUrl(rawUrl) if rawUrl else ''
+        return self.net.values.url
     
     def nxtButton(self, *args, **kwargs):
         if not len(self.upHistory): return 
@@ -1899,7 +1902,7 @@ class NodeEditFrame(tk.Frame):
 #         self.formatContent(frstIndx, 'end')
 #         return "break"
 
-import xbmcStubs.collapsingFrame as collapsingFrame
+import collapsingFrame
 import KodiLog
 import SintaxEditor
 class addonFilesViewer(collapsingFrame.collapsingFrame):

@@ -1,12 +1,14 @@
+
 # -*- coding: utf-8 -*-
 '''
 Created on 29/06/2014
 
 @author: Alex Montes Barrios
 '''
-from xbmcStubs import collapsingFrame
-from xbmcUI import KodiLog, CustomRegEx
+import collapsingFrame
+import KodiLog, CustomRegEx
 
+import collapsingFrame
 """
     return [[{"url":"http://played.to/5jhkm0lq5xge", "menu":"media"}, {"isFolder": False, "label": "Relatos Salvajes"}, None]]
 """
@@ -38,6 +40,7 @@ import FileGenerator
 import SintaxEditor
 import xmlFileWrapper
 import KodiFrontEnd
+import formDetector
 from likeXbmc import translatePath
 from ParseThreads import RegexpFrame, parseTree, EditTransaction, StatusBar, ScrolledList, addonFilesViewer
 from ParseThreads import ScrolledList, NodeEditFrame
@@ -368,12 +371,34 @@ class XbmcAddonIDE(tk.Toplevel):
 
         menuOpt = []
         menuOpt.append(('command', 'HTML struct','Ctrl+R', 0, self.HTMLstruct))
+        menuOpt.append(('command', 'Forms','Ctrl+F', 0, self.formsDetector))
         menuOpt.append(('separator',))        
         menuOpt.append(('command', 'Detach Window','Ctrl+R', 0, self.detachWindow))        
         menuOpt.append(('separator',))        
         menuOpt.append(('command', 'Setting','Ctrl+S', 0, self.programSettingDialog))
         self.makeMenu('Tools', menuOpt)
-        
+
+    def formsDetector(self):
+        baseUrl = self.regexpEd.getActiveUrl()
+        content = self.regexpEd.getContent()
+        form_xml = formDetector.getFormXmlStr(content)
+        if 'category' not in form_xml: return tkMessageBox.showinfo('Form Detector', 'No forms in url content')
+        browser = AppSettingDialog(self, form_xml, isFile = False, settings = {}, title = 'Form Detector', dheight = 600, dwidth = 400)
+        if browser.allSettings:
+            formAttr = dict([(key[3:], value) for key, value in browser.allSettings if key.startswith('fa_')])
+            formFields = browser.allSettings[len(formAttr):]
+            filterFunc = lambda x: (x[0].startswith('if_') and x[1]) or (not x[0].startswith('if_') and x[1] is not 0)
+            formFields = filter(filterFunc, formFields)
+            trnValueFnc = lambda x: (x[0],formDetector.unescapeXml(x[1].partition('|')[0])) if isinstance(x[1], basestring) else (x[0], 'on')
+            formFields = map(trnValueFnc, formFields)
+            trnKeyFnc = lambda x: (x[0][3:], '@' + x[1]) if x[0].startswith('if_') else x
+            formFields = map(trnKeyFnc, formFields)
+            # formFields = [(key, trnFnc(value)) for key, value in browser.allSettings if not (key.startswith('fa_') or value == 0)]
+            refererOpt = '-e ' + '"' + baseUrl + '"'
+            curlCommand = formDetector.getCurlCommand(baseUrl, formAttr, formFields, refererOpt)
+            print curlCommand
+            self.regexpEd.setActiveUrl(curlCommand)
+
     def HTMLstruct(self):
         tagSpan = self.regexpEd.getSelRange('actMatch')
         content = self.regexpEd.getContent(*tagSpan)
@@ -386,7 +411,7 @@ class XbmcAddonIDE(tk.Toplevel):
             fmt = '{:<20} {:<40}'.format
 #             equis = '\n'.join([fmt(x[0].count('.')*'  ' + '*' + x[0].rpartition('.')[2],x[1][:40]) for x in htmlParse])
             equis = [fmt(x[0].count('.')*'  ' + '*' + x[0].rpartition('.')[2],x[1][:40]) for x in htmlParse]
-            from xbmcStubs.xbmcgui import Dialog
+            from xbmcgui import Dialog
             k = Dialog().select('Actual match HTMLstruct', equis)
         
     def detachWindow(self):
@@ -894,4 +919,5 @@ if __name__ == "__main__":
     Root = tk.Tk()
     Root.withdraw()
     mainWin = XbmcAddonIDE()
+    mainWin.state("zoomed")
     Root.mainloop()

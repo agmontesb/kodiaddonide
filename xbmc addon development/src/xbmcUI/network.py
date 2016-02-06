@@ -8,6 +8,7 @@ import os
 import re
 import urllib
 import urllib2
+import httplib
 import urlparse
 import socket
 import cookielib
@@ -27,14 +28,16 @@ from _pytest.config import Parser
 MOBILE_BROWSER = "Mozilla/5.0 (Linux; U; Android 4.0.3; ko-kr; LG-L160L Build/IML74K) AppleWebkit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30"
 DESKTOP_BROWSER = "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36"
 
-BOUNDARY = mimetools.choose_boundary()
+
 
 def createParser():
     parser = optparse.OptionParser()
-    parserdefaults = {'header': '{}', 'referer': None, 'cookie_jar': None, 'post302': False, 'proxy': None, 'remote_header_name': False, 'proxy_auth': 'basic', 'req_method': '', 'create_dirs': False, 'location': False, 'include': False, 'form': '[]', 'cookie': None, 'user': None, 'post301': False, 'remote_name': False, 'data': '[]', 'auth_method': 'basic', 'proxy_user': None, 'url': None, 'data_binary': None, 'data_raw': None, 'user_agent': None, 'output': None, 'data_urlencode': None, 'post303': False}
+    parserdefaults = {'header': '{}', 'debug': False, 'referer': None, 'cookie_jar': None, 'post302': False, 'proxy': None, 'remote_header_name': False, 'proxy_auth': 'basic', 'req_method': '', 'create_dirs': False, 'location': False, 'include': False, 'form': '', 'cookie': None, 'user': None, 'post301': False, 'remote_name': False, 'data': '[]', 'auth_method': 'basic', 'proxy_user': None, 'url': None, 'data_binary': None, 'data_raw': None, 'user_agent': None, 'output': None, 'data_urlencode': None, 'post303': False}
     parser.set_defaults(**parserdefaults)
 
     parser.add_option('--url', dest = 'url')
+
+    parser.add_option('-v', '--verbose', action = 'store_true', dest = 'debug')
 
     parser.add_option('-H', '--header', action = 'callback', callback = headerProc, type = 'string', nargs = 1, dest = 'header')
     parser.add_option('-A', '--user-agent', action = 'callback', callback = headerProc, type = 'string', nargs = 1)
@@ -42,6 +45,7 @@ def createParser():
     parser.add_option('--compressed', action = 'callback', callback = headerProc)
 
     parser.add_option('-F', '--form', action = 'callback', callback = formProc, type = 'string', nargs = 1, dest = 'form')
+    parser.add_option('--form-string', action = 'callback', callback = formProc, type = 'string', nargs = 1, dest = 'form')
     parser.add_option('-d', '--data', action = 'callback', callback = dataProc, type = 'string', nargs = 1, dest = 'data')
     parser.add_option('--data-urlencode', action = 'callback', callback = dataProc, type = 'string', nargs = 1)
     parser.add_option('--data-raw', action = 'callback', callback = dataProc, type = 'string', nargs = 1)
@@ -79,24 +83,25 @@ def createParser():
     return parser
     
 def dataProc(option, opt_str, value, parser):
-    if opt_str == '--data':
+    if opt_str in ['-d', '--data']:
         if value.startswith('@'):
             fileName = value[1:]
             with open(fileName, 'r') as f:
                 value = '&'.join(urllib.urlencode(f.readlines()))
     elif opt_str == '--data-urlencode':
-        name1, sep1, value1 = value.partition('=')
-        name2, sep2, value2 = value.partition('@')
-        if not sep1 and not sep2:value = urllib.urlencode(value)
-        elif sep1 and ('=' + value1) == value: value = urllib.urlencode(value[1:])
-        elif sep2 and ('@' + value2) == value:
-            with open(value2, 'r') as f:
-                value = urllib.urlencode(f.read())
-        elif name1 and '@' not in name1:
-            value = name1 + "=" + urllib.urlencode(value1)
-        elif name2:
-            with open(value2, 'r') as f:
-                value = name2 + "=" + urllib.urlencode(f.read())
+        spos1 = value.find('=')
+        spos2 = value.find('@')
+        if spos1 == spos2: value = urllib.quote_plus(value)
+        else:
+            spos = spos1 if spos2 == -1 else (spos2 if spos1 == -1 else min(spos1, spos2))
+            name = value[:spos]
+            if value[spos] == '=':
+                value = urllib.quote_plus(value[spos + 1:])
+            else:
+                fname = value[spos + 1:]
+                with open(fname, 'r') as f:
+                    value = urllib.quote_plus(f.read())
+            if name: value = name + '=' + value
     elif opt_str == '--data-binary':
         if value.startswith('@'):
             fileName = value[1:]
@@ -110,47 +115,47 @@ def dataProc(option, opt_str, value, parser):
     pass
 
 def formProc(option, opt_str, value, parser):
-    form = json.loads(parser.values.form)
-    name, suffix = value.strip('"').split('=', 1)
-    value, mimetype = suffix.partition(';')[0:3:2]
-    if mimetype:
-        mimetype = 'Content-' + mimetype.replace('=',':').capitalize()
-    if value[0] in '<@':
-        prefix = value[0]
-        value = value[1:]
-        mimetype = mimetype.partition('=')[2]
-        if not mimetype: 
-            mimetype = mimetypes.guess_type(value)[0] or 'application/octet-stream'
-        rtype = 'r' if 'text' in mimetype else 'rb'
-        with open(value, rtype) as f: body = f.read()
-        mimetype = 'Content-Type: ' + mimetype
-        if prefix == '@':
-            contentDisp = 'Content-Disposition: file; name"%s"; filename="%s"' % (name, value)
-        else:
-            contentDisp = 'Content-Disposition: form-data; name"%s"' % name
-        form.extend(['--' + BOUNDARY,
-                     contentDisp,
-                     mimetype,
-                     '',
-                     body,])
-        pass
+    BOUNDARY = 6*'-' + mimetools.choose_boundary() if not parser.values.form else parser.values.form.partition('\n')[0]
+    items = {}
+    if opt_str == '--form-string':
+        name, items['value'] = value.partition('=')[0:3:2]
     else:
-        mimetype = 'Content-Type:' + mimetype or 'text/plain'
-        form.extend(['--' + BOUNDARY,
-                     'Content-Disposition: form-data; name"%s"' % name,
-                     mimetype,
-                     '',
-                     value,])
-    parser.values.form = json.dumps(form)
-            
+        name, suffix = value.partition('=')[0:3:2]
+        frstChar = suffix[0] if suffix[0] in '<@' else ''
+        if frstChar:
+            suffix = suffix[1:].split(',')
+        else:
+            suffix = [suffix]
+        while suffix:
+            toprocess = suffix.pop(0)
+            if not frstChar:
+                items['value'] = toprocess
+            else:
+                vars = toprocess.split(';')
+                filepath = vars.pop(0)
+                items.update(dict(var.split('=') for var in vars))
+                if frstChar == '@':
+                    defFileName = os.path.basename(filepath)
+                    defType = mimetypes.guess_type(defFileName)[0] or 'application/octet-stream'
+                    items['filename'] = items.get('filename', defFileName)
+                    items['type'] = items.get('type', defType)
+                with open(filepath, 'rb') as f: items['value'] = f.read()
+    items.update({'boundary':BOUNDARY, 'name':name})
+    joinBlk = '{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+    if items.has_key('filename'): joinBlk += '; filename="{filename}"'
+    if items.has_key('type'): joinBlk += '\r\nContent-Type: {type}'
+    joinBlk += '\r\n\r\n{value}\r\n'
+    parser.values.form += joinBlk.format(**items)
+
 def headerProc(option, opt_str, value, parser):
-    if opt_str == '--user-agent':
+    if opt_str in ['-A', '--user-agent']:
         value = 'User-Agent: ' + value
-    elif opt_str == '--referer':
+    elif opt_str in ['-e', '--referer']:
         value = 'Referer: ' + value
     elif opt_str == '--compressed':
         value = 'Accept-encoding: gzip,deflate'
     key, value = value.split(': ', 1)
+    key = key.title()
     header = json.loads(parser.values.header)
     if value: header[key] = value
     elif header.has_key(key): header.pop(key)
@@ -184,7 +189,6 @@ class network:
         if opvalues[-1]:
             self.parser.set_defaults(**self.parserDefaults)
             values, args = self.parser.parse_args(opvalues)
-#             assert len(args) == 1, 'Opciones no reconocibles ' + str(args)
             urlStr = args[0].strip('"')
             if not urlStr.partition('//')[1]: urlStr = 'http://' + urlStr
             values.url = urlStr
@@ -207,7 +211,7 @@ class network:
             resp_url = values.url
             data = e
         else:
-            resp_url = self.response.geturl()
+            self.values.url = resp_url = self.response.geturl()
             try:
                 data = self.response.read()
             except Exception as e:
@@ -265,11 +269,14 @@ class network:
     
     
     def getOpener(self, values):
+        opener_handlers = [urllib2.HTTPHandler(debuglevel = values.debug)]
+        if hasattr(httplib, 'HTTPS'):
+            opener_handlers.append(urllib2.HTTPSHandler(debuglevel = values.debug))
         include = None if values.include else self.log
         pSwitches = [values.post301, values.post302, values.post303]
 #         opener_handlers = [LogHandler(values.url)] 
 #         opener_handlers.append(netHTTPRedirectHandler(location = values.location, include = include, postSwitches = pSwitches))
-        opener_handlers = [netHTTPRedirectHandler(location = values.location, include = include, postSwitches = pSwitches)]
+        opener_handlers.append(netHTTPRedirectHandler(location = values.location, include = include, postSwitches = pSwitches))
     
         cookie_val = None
         if values.cookie_jar: cookie_val = values.cookie_jar
@@ -320,13 +327,13 @@ class network:
     
     def getRequest(self, values):
         postdata = ''
-        form = json.loads(values.form)
+        form = values.form
         if form:
-            form.append('--' + BOUNDARY + '--')
-            form.append('')
-            postdata += '\r\n'.join(form)
+            BOUNDARY = form.partition('\r\n')[0]
+            form += BOUNDARY + '\r\n'
+            postdata = StringIO.StringIO(form)
             headerProc(None, '-H', 'Content-type: multipart/form-data; boundary=%s' % BOUNDARY, self.parser)
-            headerProc(None, '-H','Content-length: %s' % len(postdata), self.parser)
+            headerProc(None, '-H','Content-length: %s' % len(form), self.parser)
             values.data = '[]'
         
         data = json.loads(values.data)
@@ -339,10 +346,7 @@ class network:
         postdata = postdata or None
         
         headers = json.loads(values.header)
-#         for key, value in json.loads(values.header):
-#             if value: headers[key] = value
-#             elif headers.has_key(key): headers.pop(key)
-            
+
         urlStr = values.url        
         request = urllib2.Request(urlStr, postdata, headers)
         if values.req_method  and values.req_method not in ['GET', 'POST']: 
@@ -509,35 +513,71 @@ def unCompressMethods(data, compMethod):
 
 
 if __name__ == '__main__':
-    initConf = '--user-agent "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36"'
+    import CustomRegEx
+    initConf = 'curl --user-agent "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36" --cookie-jar "cookies.lwp" --location'
     net = network(initConf, defDirectory = 'c:/testFiles')
     print 'Hello world' 
-    urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
-    urlStr = 'curl "http://aa6.cdn.vizplay.org/v/4da9d8f843be8468108d62cb506cc286.mp4?st=9VECn4qJ9eja2lxhz5ynjQ&hash=Pway1DZi6ARlvoBfz8BvEA" -H "Origin: http://videomega.tv" -H "Accept-Encoding: identity;q=1, *;q=0" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt" -H "Connection: keep-alive" -H "Range: bytes=0-" --compressed'
-    urlStr = 'curl "http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt"  --cookie-jar "cookies.lwp" --include -L'
-    urlStr = 'curl "http://hqq.tv/player/get_md5.php?server=aHR0cDovLzlxZjdoOS52a2NhY2hlLmNvbQ"%"3D"%"3D&link=aGxzLXZvZC1zNi9mbHYvYXBpL2ZpbGVzL3ZpZGVvcy8yMDE1LzExLzI3LzE0NDg1Nzc5NjI2MjQzOD9zb2NrZXQ"%"3D&at=8abd81bdd68782fb91010541aa2044df&adb=0"%"2F&b=1&vid=D5RM53HN4X3M" -H "Cookie: __cfduid=d999c2d230c10b08a26d77d4227d71c8b1448502346; video_D5RM53HN4X3M=watched; user_ad=watched; _ga=GA1.2.197051833.1449399878; noadvtday=0; incap_ses_257_146471=ZIzkX4wa5yESEeaczQyRA+g4ZFYAAAAA4lmajNgKvr85nmfXjJC/+A==; __PPU_CHECK=1; __PPU_SESSION_c-f=Xf4e8d,1449409702,1,1449409582X; visid_incap_146471=quZ+QT56TmKQd6TqlyOm+EdkVlYAAAAAQUIPAAAAAAA0mlg9lN8zyBplBfZvmrin; incap_ses_209_146471=mPDTGK78tXa1dGIwoYTmAtY7ZFYAAAAA2E7y0JGu8xDbhxMVTR/Peg==" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://hqq.tv/" -H "X-Requested-With: XMLHttpRequest" -H "Connection: keep-alive" --compressed'
-    urlStr = 'curl "http://hqq.tv/player/get_md5.php?b=1&vid=D5RM53HN4X3M&server=aHR0cDovLzlxZjdoOS52a2NhY2hlLmNvbQ%3D%3D&adb=0%2F&at=043a566afeb0bf2b668296a2128011d6&link=aGxzLXZvZC1zNi9mbHYvYXBpL2ZpbGVzL3ZpZGVvcy8yMDE1LzExLzI3LzE0NDg1Nzc5NjI2MjQzOD9zb2NrZXQ%3D"'
-    urlStr = 'curl "http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36"   -H "Referer: http://www.novelashdgratis.tv/"'
-    urlStr = 'curl "http://videomega.tv/cdn.php?ref=3f0UiU3oXggXo3UiU0f3" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36"   -H "Referer: http://www.novelashdgratis.tv/"'
-#     data  = urlOpen(urlStr)
-    urlStr ='curl "http://www.larebajavirtual.com/" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://www.larebajavirtual.com/" -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Connection: keep-alive" -H "Cache-Control: max-age=0" --compressed'
-    urlStr ='curl "http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.73 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?action=dummy" -H "Cookie: JSESSIONID=48E5CEBA94C459BEEF1157BC23970A3A.tomcatM1p6101; __utmt=1; submenuheader=-1c; style=null; __utma=146679143.72887542.1448644509.1449008313.1449593287.5; __utmb=146679143.3.10.1449593287; __utmc=146679143; __utmz=146679143.1448644509.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none)" -H "Connection: keep-alive" -H "Cache-Control: max-age=0" --compressed'
-    urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
-    urlStr = 'curl "http://localhost:8080/" -F "firstname=Doug" -F "lastname=Hellman" -F "biography=@C:/testFiles/bio.txt"' 
-    urlStr = 'curl "http://powvideo.net/iframe-x5gab53lm207-607x360.html" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.73 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://powvideo.net/preview-x5gab53lm207-607x360.html" -L -i -I --compressed'
-    urlStr = 'curl "http://imgs24.com/i/Mr_Holmes-813244846-large.th.jpg" --output "c:/testFiles/mipng.jpg"'
-    urlStr = 'curl "http://imgs24.com/i/Mr_Holmes-813244846-large.th.jpg" -H "If-None-Match: ""48bdcd-34ab-46895a3c78eb2""" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://pelis24.com/hd/" -H "Cookie: __cfduid=decb65f5cc969051bbdbb4fb2837d8be91449850247" -H "Connection: keep-alive" -H "If-Modified-Since: Tue, 28 Apr 2009 04:10:14 GMT" -H "Cache-Control: max-age=0" --output "c:/testFiles/pic/holmes.jpg" --create-dirs --compressed'
-    urlStr = 'curl "https://openload.co/embed/EzDsB4C1Lk8/" --user-agent "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36" -H "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"  --compressed'
-    urlStr = 'curl "http://localhost:8080/" -F "firstname=Doug" -F "lastname=Hellman" -F "biography=@C:/testFiles/bio.txt"'
-    urlStr = 'curl "http://imgs24.com/i/Mr_Holmes-813244846-large.th.jpg" --output "c:/testFiles/mipng.jpg"'
-    urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
-    urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" --cookie "None"  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" --user "httwatch:vacaciones" -o "c:/testFiles/httpwatch.png" -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)" -L'
-    urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" --cookie "None" -o "c:/testFiles/testCase.txt" -H "Cookie: __utma=122436758.286328447.1449155983.1450276163.1450366939.5; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); PHPSESSID=pf0t4q65l5u9kbqj16mgb47ke5; SERVERID=B; _gat=1; _ga=GA1.2.286328447.1449155983; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar"  -L --compressed'
-    urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" -o "c:/testFiles/httpwatch.png" -H "Authorization: Basic aHR0cHdhdGNoOmJhcnJpb3M=" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" -H "Accept: image/webp,image/*,*/*;q=0.8" -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)" -H "Connection: keep-alive" --compressed'
-    urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" -o "c:/testFiles/httpwatch.png" -H "Host: www.httpwatch.com" -H "Authorization: Basic aHR0cHdhdGNoOmJhcnJpb3M="  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"  -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)"'
-    urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" --cookie "None"  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" --user "httpwatch:mi_mensaje_especial" -o "c:/testFiles/httpwatch.png" -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)" -L'
-    urlStr = 'curl "http://vimeo.com/" --proxy "https://sitenable.com/o.php" --cookie "None"  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" -o "testCase.txt" --compressed'    
-    data = net.openUrl(urlStr)
-    print 'Alex' in data
-    pass
 
+    """
+    curl "http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar" --data-urlencode "tipoMercado=1" --data-urlencode "diaFecha=16" --data-urlencode "mesFecha=06" --data-urlencode "anioFecha=2015" --data-urlencode "nemo=" --compressed
+    curl "http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar" --data "tipoMercado=1&diaFecha=16&mesFecha=06&anioFecha=2015&nemo="
+    http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar<post>tipoMercado=1&diaFecha=16&mesFecha=06&anioFecha=2015&nemo=
+    """
+    url = 'curl "http://localhost:50000" -v --form "text1=text default" --form "text2=a&#x03C9;b" --form "file1=@C:/testFiles/fakevideo.3gp" --form "file2=@C:/testFiles/mipng.jpg" --form "file3=@C:/testFiles/powvideoTest.txt" -e "file:///C:/testFiles/formMultipart.html" --compressed'
+    content = net.openUrl(url)[0]
+    print content
+
+    # fakevideo.3gp = http://allmyvideos.net/wvtybslfdov0
+#     urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
+#     urlStr = 'curl "http://aa6.cdn.vizplay.org/v/4da9d8f843be8468108d62cb506cc286.mp4?st=9VECn4qJ9eja2lxhz5ynjQ&hash=Pway1DZi6ARlvoBfz8BvEA" -H "Origin: http://videomega.tv" -H "Accept-Encoding: identity;q=1, *;q=0" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt" -H "Connection: keep-alive" -H "Range: bytes=0-" --compressed'
+#     urlStr = 'curl "http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt"  --cookie-jar "cookies.lwp" --include -L'
+#     urlStr = 'curl "http://hqq.tv/player/get_md5.php?server=aHR0cDovLzlxZjdoOS52a2NhY2hlLmNvbQ"%"3D"%"3D&link=aGxzLXZvZC1zNi9mbHYvYXBpL2ZpbGVzL3ZpZGVvcy8yMDE1LzExLzI3LzE0NDg1Nzc5NjI2MjQzOD9zb2NrZXQ"%"3D&at=8abd81bdd68782fb91010541aa2044df&adb=0"%"2F&b=1&vid=D5RM53HN4X3M" -H "Cookie: __cfduid=d999c2d230c10b08a26d77d4227d71c8b1448502346; video_D5RM53HN4X3M=watched; user_ad=watched; _ga=GA1.2.197051833.1449399878; noadvtday=0; incap_ses_257_146471=ZIzkX4wa5yESEeaczQyRA+g4ZFYAAAAA4lmajNgKvr85nmfXjJC/+A==; __PPU_CHECK=1; __PPU_SESSION_c-f=Xf4e8d,1449409702,1,1449409582X; visid_incap_146471=quZ+QT56TmKQd6TqlyOm+EdkVlYAAAAAQUIPAAAAAAA0mlg9lN8zyBplBfZvmrin; incap_ses_209_146471=mPDTGK78tXa1dGIwoYTmAtY7ZFYAAAAA2E7y0JGu8xDbhxMVTR/Peg==" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://hqq.tv/" -H "X-Requested-With: XMLHttpRequest" -H "Connection: keep-alive" --compressed'
+#     urlStr = 'curl "http://hqq.tv/player/get_md5.php?b=1&vid=D5RM53HN4X3M&server=aHR0cDovLzlxZjdoOS52a2NhY2hlLmNvbQ%3D%3D&adb=0%2F&at=043a566afeb0bf2b668296a2128011d6&link=aGxzLXZvZC1zNi9mbHYvYXBpL2ZpbGVzL3ZpZGVvcy8yMDE1LzExLzI3LzE0NDg1Nzc5NjI2MjQzOD9zb2NrZXQ%3D"'
+#     urlStr = 'curl "http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36"   -H "Referer: http://www.novelashdgratis.tv/"'
+#     urlStr = 'curl "http://videomega.tv/cdn.php?ref=3f0UiU3oXggXo3UiU0f3" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36"   -H "Referer: http://www.novelashdgratis.tv/"'
+# #     data  = urlOpen(urlStr)
+#     urlStr ='curl "http://www.larebajavirtual.com/" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://www.larebajavirtual.com/" -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Connection: keep-alive" -H "Cache-Control: max-age=0" --compressed'
+#     urlStr ='curl "http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.73 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?action=dummy" -H "Cookie: JSESSIONID=48E5CEBA94C459BEEF1157BC23970A3A.tomcatM1p6101; __utmt=1; submenuheader=-1c; style=null; __utma=146679143.72887542.1448644509.1449008313.1449593287.5; __utmb=146679143.3.10.1449593287; __utmc=146679143; __utmz=146679143.1448644509.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none)" -H "Connection: keep-alive" -H "Cache-Control: max-age=0" --compressed'
+#     urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
+#     urlStr = 'curl "http://localhost:8080/" -F "firstname=Doug" -F "lastname=Hellman" -F "biography=@C:/testFiles/bio.txt"'
+#     urlStr = 'curl "http://powvideo.net/iframe-x5gab53lm207-607x360.html" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.73 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://powvideo.net/preview-x5gab53lm207-607x360.html" -L -i -I --compressed'
+#     urlStr = 'curl "http://imgs24.com/i/Mr_Holmes-813244846-large.th.jpg" --output "c:/testFiles/mipng.jpg"'
+#     urlStr = 'curl "http://imgs24.com/i/Mr_Holmes-813244846-large.th.jpg" -H "If-None-Match: ""48bdcd-34ab-46895a3c78eb2""" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Referer: http://pelis24.com/hd/" -H "Cookie: __cfduid=decb65f5cc969051bbdbb4fb2837d8be91449850247" -H "Connection: keep-alive" -H "If-Modified-Since: Tue, 28 Apr 2009 04:10:14 GMT" -H "Cache-Control: max-age=0" --output "c:/testFiles/pic/holmes.jpg" --create-dirs --compressed'
+#     urlStr = 'curl "https://openload.co/embed/EzDsB4C1Lk8/" --user-agent "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36" -H "accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"  --compressed'
+#     urlStr = 'curl "http://localhost:8080/" -F "firstname=Doug" -F "lastname=Hellman" -F "biography=@C:/testFiles/bio.txt"'
+#     urlStr = 'curl "http://imgs24.com/i/Mr_Holmes-813244846-large.th.jpg" --output "c:/testFiles/mipng.jpg"'
+#     urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
+#     urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" --cookie "None"  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" --user "httwatch:vacaciones" -o "c:/testFiles/httpwatch.png" -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)" -L'
+#     urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" --cookie "None" -o "c:/testFiles/testCase.txt" -H "Cookie: __utma=122436758.286328447.1449155983.1450276163.1450366939.5; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); PHPSESSID=pf0t4q65l5u9kbqj16mgb47ke5; SERVERID=B; _gat=1; _ga=GA1.2.286328447.1449155983; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar"  -L --compressed'
+#     urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" -o "c:/testFiles/httpwatch.png" -H "Authorization: Basic aHR0cHdhdGNoOmJhcnJpb3M=" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" -H "Accept: image/webp,image/*,*/*;q=0.8" -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)" -H "Connection: keep-alive" --compressed'
+#     urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" -o "c:/testFiles/httpwatch.png" -H "Host: www.httpwatch.com" -H "Authorization: Basic aHR0cHdhdGNoOmJhcnJpb3M="  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36"  -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)"'
+#     urlStr = 'curl "https://www.httpwatch.com/httpgallery/authentication/authenticatedimage/default.aspx?0.5612395589430635" --cookie "None"  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" --user "httpwatch:mi_mensaje_especial" -o "c:/testFiles/httpwatch.png" -H "Referer: https://www.httpwatch.com/httpgallery/authentication/" -H "Cookie: LastPassword=montes; __utmt=1; ARRAffinity=a76654ca7f49a0cbbce2d3d460023ceaf63cbee2a548fd4bf7dd6f0b4758ad31; __utma=1.1454154178.1450557677.1450557677.1450557755.2; __utmb=1.7.10.1450557755; __utmc=1; __utmz=1.1450557755.2.2.utmcsr=google|utmccn=(organic)|utmcmd=organic|utmctr=(not"%"20provided)" -L'
+#     urlStr = 'curl "http://vimeo.com/" --proxy "https://sitenable.com/o.php" --cookie "None"  -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.106 Safari/537.36" -o "testCase.txt" --compressed'
+#     urlStr = 'curl "http://allmyvideos.net/gnt0r39xr857" --data-urlencode "op=download1" --data-urlencode "usr_login=" --data-urlencode "id=gnt0r39xr857" --data-urlencode "fname=father.brown.2013.s04e07.720p.hdtv.x264-moritz.mkv" --data-urlencode "referer=" --data-urlencode "method_free=1" --compressed'
+#     urlStr = 'curl "http://allmyvideos.net/gnt0r39xr857" -H "Cookie: __atuvc=1"%"7C4; aff=2445; lang=spanish; __utmt=1; __utma=220305736.1314233908.1452619741.1453851923.1453922735.6; __utmb=220305736.1.10.1453922735; __utmc=220305736; __utmz=220305736.1452619741.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); __utmv=220305736.|1=User"%"20Type=Free=1" -H "Origin: http://allmyvideos.net" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.82 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://allmyvideos.net/gnt0r39xr857" -H "Connection: keep-alive" --data "op=download1&usr_login=&id=gnt0r39xr857&fname=father.brown.2013.s04e07.720p.hdtv.x264-moritz.mkv&referer=&method_free=1" --compressed'
+#
+#
+#     data = net.openUrl(urlStr)[0]
+#     print 'father+brown+2013+s04e07+720p' in data
+#
+#     import basicFunc
+#     headers = {"Cookie":'__atuvc=1"%"7C4; aff=2445; lang=spanish; __utmt=1; __utma=220305736.1314233908.1452619741.1453851923.1453922735.6; __utmb=220305736.1.10.1453922735; __utmc=220305736; __utmz=220305736.1452619741.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); __utmv=220305736.|1=User"%"20Type=Free=1',
+#                "Origin": "http://allmyvideos.net",
+#                "Accept-Encoding": "gzip, deflate",
+#                "Accept-Language": "es-ES,es;q=0.8,en;q=0.6",
+#                "Upgrade-Insecure-Requests": "1",
+#                "User-Agent": "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.82 Safari/537.36",
+#                "Content-Type": "application/x-www-form-urlencoded",
+#                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+#                "Cache-Control": "max-age=0",
+#                "Referer": "http://allmyvideos.net/gnt0r39xr857",
+#                "Connection": "keep-alive"}
+#
+#     postdata = 'op=download1&usr_login=&id=gnt0r39xr857&fname=father.brown.2013.s04e07.720p.hdtv.x264-moritz.mkv&referer=&method_free=1'
+#     videoId = 'gnt0r39xr857'
+#     encodeHeaders = urllib.urlencode(headers)
+#     url = 'http://allmyvideos.net/%s<post>%s<headers>%s' % (videoId, postdata, encodeHeaders)
+#     data = basicFunc.openUrl(url)[1]
+#     print 'father+brown+2013+s04e07+720p' in data
+#     pass
+#

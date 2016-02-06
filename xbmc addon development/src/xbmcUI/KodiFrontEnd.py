@@ -20,9 +20,9 @@ import logging
 import Tkinter as tk
 import tkFont
 import traceback
-import xbmcStubs.menuManagement as menuManagement
-import xbmcStubs.collapsingFrame as collapsingFrame
-import xbmcUI.SintaxEditor as SintaxEditor
+import menuManagement
+import collapsingFrame
+import SintaxEditor
 from PIL import Image, ImageTk  # @UnresolvedImport
 import KodiAddonImporter
 xbmcStubsDir = r'C:\Users\Alex Montes Barrios\git\addonDevelopment\xbmc addon development\src\xbmcStubs'

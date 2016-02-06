@@ -3,7 +3,7 @@ Created on 13/05/2014
 
 @author: Alex Montes Barrios
 '''
-import xbmcStubs.xbmcgui as xbmcgui
+import xbmcgui
 
 class menuHistory:
     def __init__(self, base_url):

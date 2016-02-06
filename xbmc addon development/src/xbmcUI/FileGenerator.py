@@ -6,7 +6,7 @@ Created on 30/12/2014
 import sys
 import re
 import xml.etree.ElementTree as ET
-from xbmcUI.addonCoder import CoderParser, ntype
+from addonCoder import CoderParser, ntype
 
 class FileGenerator:
     def __init__(self, addonSettings, addonThreads, addonCoder):
