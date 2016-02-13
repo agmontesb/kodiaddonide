@@ -315,7 +315,7 @@ def openload(videoId, headers = None):
     content = basicFunc.openUrl(urlStr)[1]    
     varTags = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     pattern = r'(?#<video script.*=puzzle>)'
-    puzzle = CustomRegEx.findall(pattern, content)[0][0]
+    puzzle = CustomRegEx.findall(pattern, content)[0]
     vars = sorted(set(re.findall(r'\(([^=)(]+)\) *=', puzzle)))
     keys1 = re.findall(r', *(?P<key>[^: ]+) *:', puzzle)
     keys2 = re.findall(r"\(ﾟДﾟ\) *\[[^']+\] *=", puzzle)
@@ -393,7 +393,7 @@ if __name__ == "__main__":
         content = basicFunc.openUrl(urlStr)[1]    
         varTags = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         pattern = r'(?#<video script.*=puzzle>)'
-        puzzle = CustomRegEx.findall(pattern, content)[0][0]
+        puzzle = CustomRegEx.findall(pattern, content)[0]
         vars = sorted(set(re.findall(r'\(([^=)(]+)\) *=', puzzle)))
         keys1 = re.findall(r', *(?P<key>[^: ]+) *:', puzzle)
         keys2 = re.findall(r"\(ﾟДﾟ\) *\[[^']+\] *=", puzzle)
@@ -529,7 +529,7 @@ def vidto(videoId, headers = None):
     content = basicFunc.openUrl(urlStr)[1]
     pattern = r'(?#<a class="player-url" href=url>)'
     sources = CustomRegEx.findall(pattern, content, re.DOTALL)
-    href, = sources.pop()
+    href = sources.pop()
     urlStr = '%s|%s' % (href,urllib.urlencode({'User-Agent':MOBILE_BROWSER}))
     return urlStr
     pass

@@ -387,7 +387,8 @@ class XbmcAddonIDE(tk.Toplevel):
         if browser.allSettings:
             formAttr = dict([(key[3:], value) for key, value in browser.allSettings if key.startswith('fa_')])
             formFields = browser.allSettings[len(formAttr):]
-            filterFunc = lambda x: (x[0].startswith('if_') and x[1]) or (not x[0].startswith('if_') and x[1] is not 0)
+            # filterFunc = lambda x: (x[0].startswith('if_') and x[1]) or (not x[0].startswith('if_') and x[1] is not 0)
+            filterFunc = lambda x: x[1] is not 0
             formFields = filter(filterFunc, formFields)
             trnValueFnc = lambda x: (x[0],formDetector.unescapeXml(x[1].partition('|')[0])) if isinstance(x[1], basestring) else (x[0], 'on')
             formFields = map(trnValueFnc, formFields)

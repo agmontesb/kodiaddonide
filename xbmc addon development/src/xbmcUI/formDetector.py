@@ -51,19 +51,20 @@ def getFormData(comPattern, content, posini):
             formFields[name] = attr
             if attr.has_key('list'):
                 pattern = r'(?#<datalist id="%s"<value=value>*>)' % attr['list']
-                attr['value'] = map(operator.itemgetter(0), CustomRegEx.findall(pattern, formHtml))
+                attr['value'] = CustomRegEx.findall(pattern, formHtml)
                 pass
             elif tag == 'select':
                 pattern = r'(?#<option value=value *=&lvalue&>)'
                 match = CustomRegEx.findall(pattern, formHtml[p1:p2])
-                attr['value'] = map(operator.itemgetter(0), match)
-                attr['lvalue'] = map(operator.itemgetter(1), match)
+                # attr['value'] = map(operator.itemgetter(0), match)
+                # attr['lvalue'] = map(operator.itemgetter(1), match)
+                attr['value'], attr['lvalue'] = match.groups()
                 pattern = r'(?#<option value=value>)'
-                attr['value'] = map(operator.itemgetter(0), CustomRegEx.findall(pattern, formHtml[p1:p2]))
+                attr['value'] = CustomRegEx.findall(pattern, formHtml[p1:p2])
 
                 pattern = r'(?#<option value=value selected>)'
                 try:
-                    attr['default'], = CustomRegEx.findall(pattern, formHtml[p1:p2])[0]
+                    attr['default'] = CustomRegEx.findall(pattern, formHtml[p1:p2])[0]
                 except:
                     attr['default'] = ''
                 pass

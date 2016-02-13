@@ -115,7 +115,7 @@ class ExtRegexParser:
     
     def getAllTagData(self, tagPos, data, tagList):
         posBeg, posEnd = tagList[tagPos][0]
-        tagAttr = self.getAttrDict(data[posBeg:posEnd], posBeg)
+        tagAttr = self.getAttrDict(data[:posEnd], posBeg)
         n = tagList[tagPos][2]
         if n > 0:
             posBeg, posEnd = tagList[n][0]
@@ -213,7 +213,8 @@ class ExtRegexParser:
                     attr = sep
                     while 1:
                         attrInc, posfin = getCharsNotInSet(tag, '\'"', posfin)
-                        if len(attr) > 1 and attrInc[-1] in '=>' and attr[0] == attr[-1]: break
+                        # if len(attr) > 1 and attrInc[-1] in '=>' and attr[0] == attr[-1]: break
+                        if len(attr) > 1 and attrInc[-1] in '=>' and attr[-1] in '\'"': break
                         attr += attrInc
                         sep, posfin = skipCharsInSet(tag, '\'"', posfin)
                         attr += sep
@@ -365,7 +366,12 @@ class ExtRegexObject:
         return answer
     
     def findall(self, string, pos = -1, endpos = -1):
-        return [m.groups() for m in self.finditer(string, pos, endpos)]
+        answ = []
+        for m in self.finditer(string, pos, endpos):
+            ngroups = len(m.groups())
+            if ngroups > 1: answ.append(m.groups())
+            else: answ.append(m.group(ngroups))
+        return answ
 
     def finditer(self, string, pos = -1, endpos = -1):
         def iterTag():

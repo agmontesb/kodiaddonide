@@ -9,8 +9,6 @@ import sys
 import pprint
 import pytest
 import re
-
-import xbmcUI.CustomRegEx as CustomRegEx
 import CustomRegEx
 
 def ExtCompObjEquality(a , b):
@@ -109,8 +107,8 @@ class TestExtRegexParser:
         htmlStr = ' '.join(htmlLst) + '>'
         print htmlStr
         parser = CustomRegEx.ExtRegexParser()
+        htmlStr = 18*' ' + htmlStr
         tag, attrD = parser.getAttrDict(htmlStr, offset = 18, noTag=False)
-        htmlStr = 18*' ' + htmlStr 
         attrP = attrD.pop('*ParamPos*')
         assert tag == 'a', "El tag reportado no corresponde al tag real"
         assert len(attrD) == 3
@@ -176,7 +174,7 @@ class TestExtMatch:
 
     def test_general(self):
         answer = CustomRegEx.findall('(?#<hijo id="hijo1" *=label>)', self.htmlStr)
-        required = [('primer hijo', )]
+        required = ['primer hijo']
         assert answer == required, 'Comentario y variable independiente'
 
         answer = CustomRegEx.findall('(?#<hijo id=varid *=label>)', self.htmlStr)
@@ -188,7 +186,7 @@ class TestExtMatch:
         assert answer == required, 'Utilizando variables para distinguir casos'
 
         answer = CustomRegEx.findall('(?#<hijo exp *=label>)', self.htmlStr)
-        required = [('', )]
+        required = ['']
         assert answer == required, 'Utilizando atributos requeridos (exp) para distinguir un caso'
         
         answer = CustomRegEx.findall('(?#<hijo exp .*>)', self.htmlStr)
@@ -203,7 +201,7 @@ class TestExtMatch:
     
     def test_tag(self):
         answer = CustomRegEx.findall('(?#<span|a *=label>)', self.htmlStr)
-        required1 = [('span0', ), ('bloque1', ), ('bloque2', ), ('span3',)]
+        required1 = ['span0', 'bloque1', 'bloque2', 'span3']
         assert answer == required1, 'Obtener texto de tags span o a'
         
         cmpobj = CustomRegEx.compile('(?#<(span|a) *=label>)')
@@ -287,11 +285,11 @@ class TestExtMatch:
         
 
 
-def test_extSearch(htmlString):
-    testPattern = CustomRegEx.compile('<ul class="links">.+?</ul><ZIN><a title="(?P<label>[^"]+)" href="(?P<url>[^"]+)">.+?</a>', re.DOTALL)
-    match = testPattern.search(htmlString, 0)
-    
-'''
-Para probar:   <tv default="true">-</tv>
-'''    
+# def test_extSearch(htmlString):
+#     testPattern = CustomRegEx.compile('<ul class="links">.+?</ul><ZIN><a title="(?P<label>[^"]+)" href="(?P<url>[^"]+)">.+?</a>', re.DOTALL)
+#     match = testPattern.search(htmlString, 0)
+#
+# '''
+# Para probar:   <tv default="true">-</tv>
+# '''
     

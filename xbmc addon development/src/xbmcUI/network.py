@@ -117,35 +117,33 @@ def dataProc(option, opt_str, value, parser):
 def formProc(option, opt_str, value, parser):
     BOUNDARY = 6*'-' + mimetools.choose_boundary() if not parser.values.form else parser.values.form.partition('\n')[0]
     items = {}
-    if opt_str == '--form-string':
-        name, items['value'] = value.partition('=')[0:3:2]
-    else:
-        name, suffix = value.partition('=')[0:3:2]
-        frstChar = suffix[0] if suffix[0] in '<@' else ''
-        if frstChar:
-            suffix = suffix[1:].split(',')
+    name, suffix = value.partition('=')[0:3:2]
+    frstChar = ''
+    if opt_str != '--form-string' and suffix[0] in '<@': frstChar, suffix = suffix[0], suffix[1:]
+    suffix += ','
+    while suffix:
+        toprocess, suffix = suffix.split(',', 1)
+        if not frstChar:
+            items['value'] = toprocess
         else:
-            suffix = [suffix]
-        while suffix:
-            toprocess = suffix.pop(0)
-            if not frstChar:
-                items['value'] = toprocess
-            else:
-                vars = toprocess.split(';')
-                filepath = vars.pop(0)
-                items.update(dict(var.split('=') for var in vars))
-                if frstChar == '@':
-                    defFileName = os.path.basename(filepath)
-                    defType = mimetypes.guess_type(defFileName)[0] or 'application/octet-stream'
-                    items['filename'] = items.get('filename', defFileName)
-                    items['type'] = items.get('type', defType)
+            vars = toprocess.split(';')
+            filepath = vars.pop(0)
+            items.update(dict(var.split('=') for var in vars))
+            try:
                 with open(filepath, 'rb') as f: items['value'] = f.read()
-    items.update({'boundary':BOUNDARY, 'name':name})
-    joinBlk = '{boundary}\r\nContent-Disposition: form-data; name="{name}"'
-    if items.has_key('filename'): joinBlk += '; filename="{filename}"'
-    if items.has_key('type'): joinBlk += '\r\nContent-Type: {type}'
-    joinBlk += '\r\n\r\n{value}\r\n'
-    parser.values.form += joinBlk.format(**items)
+            except:
+                items['value'] = ''
+            if frstChar == '@':
+                defFileName = os.path.basename(filepath)
+                defType = mimetypes.guess_type(defFileName)[0] or 'application/octet-stream'
+                items['filename'] = items.get('filename', defFileName)
+                items['type'] = items.get('type', defType)
+        items.update({'boundary':BOUNDARY, 'name':name})
+        joinBlk = '{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+        if items.has_key('filename'): joinBlk += '; filename="{filename}"'
+        if items.has_key('type'): joinBlk += '\r\nContent-Type: {type}'
+        joinBlk += '\r\n\r\n{value}\r\n'
+        parser.values.form += joinBlk.format(**items)
 
 def headerProc(option, opt_str, value, parser):
     if opt_str in ['-A', '--user-agent']:
@@ -163,7 +161,8 @@ def headerProc(option, opt_str, value, parser):
 
 
 class network:
-    CURL_PATTERN = r'(?<= )(-[-\da-zA-Z]+)(?= )'
+    # CURL_PATTERN = r'(?<= )(-[-\\da-zA-Z]+)|("[^"]+")|(\'[^\']+\')(?= )'
+    CURL_PATTERN = r'(?<= )(-[-\\da-zA-Z]+|"[^"]+"|\'[^\']+\')(?= )'
 
     def __init__(self, initCurlComm = '', defDirectory = ''):
         self.baseOptions = self.parseCommand(initCurlComm) if initCurlComm else []
@@ -180,7 +179,27 @@ class network:
             strHeaders = ' '.join(['-H "%s: %s"' % (key,value[0]) for key, value in headers.items()])
             curlCommand += ' ' + strHeaders
         curlStr = ' ' + curlCommand.replace('<post>', ' --data ').lstrip('curl ') + ' '
-        opvalues = [elem for elem in map(operator.methodcaller('strip', ' "') ,re.split(self.CURL_PATTERN, curlStr)) if elem]
+        # opvalues = [elem for elem in map(operator.methodcaller('strip', ' "'), re.split(self.CURL_PATTERN, curlStr)) if elem]
+
+        # opvalues = re.split(self.CURL_PATTERN, curlStr)
+        # opvalues = [elem.strip() for elem in opvalues if elem and len(elem.strip())]
+        # opvalues = [re.split('[ ]+',elem) if elem[0] not in '-\'"' else elem for elem in opvalues]
+        # g = []
+        # for elem in opvalues:
+        #     if isinstance(elem, basestring): g.append(elem)
+        #     else: g.extend(elem)
+        # return g
+        opvalues = []
+        while curlStr:
+            s = re.split(self.CURL_PATTERN, curlStr, 1)
+            prefix = s[0].strip()
+            if prefix: opvalues.extend(re.split('[ ]+',prefix))
+            try:
+                opvalues.append(s[1].strip('"\''))
+            except:
+                curlStr = ''
+            else:
+                curlStr = s[2]
         return opvalues
     
     def getValuesFromUrl(self, urlToOpen):
@@ -309,7 +328,7 @@ class network:
             opener_handlers.append(proxy_handler)
             if not user:
                 if values.proxy_user:
-                    user, password = values.proxy_user.partition(':')
+                    user, password = values.proxy_user.partition(':')[0:3:2]
             if user and not password:
                 try:
                     password = tkSimpleDialog.askstring("Enter proxy password for " + user, "Enter password:", show='*')
@@ -331,7 +350,7 @@ class network:
         if form:
             BOUNDARY = form.partition('\r\n')[0]
             form += BOUNDARY + '\r\n'
-            postdata = StringIO.StringIO(form)
+            postdata = form
             headerProc(None, '-H', 'Content-type: multipart/form-data; boundary=%s' % BOUNDARY, self.parser)
             headerProc(None, '-H','Content-length: %s' % len(form), self.parser)
             values.data = '[]'
@@ -346,6 +365,7 @@ class network:
         postdata = postdata or None
         
         headers = json.loads(values.header)
+        headers = dict((key.encode('utf-8'), value.encode('utf-8')) for key, value in headers.items())
 
         urlStr = values.url        
         request = urllib2.Request(urlStr, postdata, headers)
@@ -523,13 +543,13 @@ if __name__ == '__main__':
     curl "http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar" --data "tipoMercado=1&diaFecha=16&mesFecha=06&anioFecha=2015&nemo="
     http://www.bvc.com.co/pps/tibco/portalbvc/Home/Mercados/enlinea/acciones?com.tibco.ps.pagesvc.action=portletAction&com.tibco.ps.pagesvc.targetSubscription=5d9e2b27_11de9ed172b_-74187f000001&action=buscar<post>tipoMercado=1&diaFecha=16&mesFecha=06&anioFecha=2015&nemo=
     """
-    url = 'curl "http://localhost:50000" -v --form "text1=text default" --form "text2=a&#x03C9;b" --form "file1=@C:/testFiles/fakevideo.3gp" --form "file2=@C:/testFiles/mipng.jpg" --form "file3=@C:/testFiles/powvideoTest.txt" -e "file:///C:/testFiles/formMultipart.html" --compressed'
+    url = 'curl "http://localhost:50000" --form "text1=text default" --form "text2=a&#x03C9;b" --form "file1=@C:/testFiles/fakevideo.3gp" --form "file2=@C:/testFiles/mipng.jpg" --form "file3=@C:/testFiles/powvideoTest.txt" -e "file:///C:/testFiles/formMultipart.html" --compressed'
     content = net.openUrl(url)[0]
-    print content
+    print conten
 
     # fakevideo.3gp = http://allmyvideos.net/wvtybslfdov0
 #     urlStr = 'curl "http://www.larebajavirtual.com/admin/login/autenticar" -i -L -H "Cookie: PHPSESSID=3aq7b04etgak304bdkkvavmgc3; SERVERID=A; __utma=122436758.286328447.1449155983.1449156151.1449156151.1; __utmc=122436758; __utmz=122436758.1449156151.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); _ga=GA1.2.286328447.1449155983; _gat=1; __zlcmid=Y0f9JrZKNnst3j" -H "Origin: http://www.larebajavirtual.com" -H "Accept-Encoding: gzip, deflate" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "Upgrade-Insecure-Requests: 1" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Content-Type: application/x-www-form-urlencoded" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" -H "Cache-Control: max-age=0" -H "Referer: http://www.larebajavirtual.com/admin/login/index/pantalla/" -H "Connection: keep-alive" --data "username=9137521&password=agmontesb&login=Ingresar" --compressed'
-#     urlStr = 'curl "http://aa6.cdn.vizplay.org/v/4da9d8f843be8468108d62cb506cc286.mp4?st=9VECn4qJ9eja2lxhz5ynjQ&hash=Pway1DZi6ARlvoBfz8BvEA" -H "Origin: http://videomega.tv" -H "Accept-Encoding: identity;q=1, *;q=0" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt" -H "Connection: keep-alive" -H "Range: bytes=0-" --compressed'
+#     urlStr = 'curl "http://aa6.cdn.vizplay.org/v/4da9d8f843be8468108d62cb506cc286.mp4?st=9VECn4qJ9eja2lxhz5ynjQ&hash=Pway1DZi6ARlvoBfz8BvEA" -H "Origin: http://videomega.tv" -H "Accept-Encoding: identity;q=1, *;q=0" -H "Accept-Languag-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt" -H "Connection: keep-alive" -H "Range: bytes=0-" --compressed'
 #     urlStr = 'curl "http://videomega.tv/cdn.php?ref=tBmn3h4X3AA3X4h3nmBt"  --cookie-jar "cookies.lwp" --include -L'
 #     urlStr = 'curl "http://hqq.tv/player/get_md5.php?server=aHR0cDovLzlxZjdoOS52a2NhY2hlLmNvbQ"%"3D"%"3D&link=aGxzLXZvZC1zNi9mbHYvYXBpL2ZpbGVzL3ZpZGVvcy8yMDE1LzExLzI3LzE0NDg1Nzc5NjI2MjQzOD9zb2NrZXQ"%"3D&at=8abd81bdd68782fb91010541aa2044df&adb=0"%"2F&b=1&vid=D5RM53HN4X3M" -H "Cookie: __cfduid=d999c2d230c10b08a26d77d4227d71c8b1448502346; video_D5RM53HN4X3M=watched; user_ad=watched; _ga=GA1.2.197051833.1449399878; noadvtday=0; incap_ses_257_146471=ZIzkX4wa5yESEeaczQyRA+g4ZFYAAAAA4lmajNgKvr85nmfXjJC/+A==; __PPU_CHECK=1; __PPU_SESSION_c-f=Xf4e8d,1449409702,1,1449409582X; visid_incap_146471=quZ+QT56TmKQd6TqlyOm+EdkVlYAAAAAQUIPAAAAAAA0mlg9lN8zyBplBfZvmrin; incap_ses_209_146471=mPDTGK78tXa1dGIwoYTmAtY7ZFYAAAAA2E7y0JGu8xDbhxMVTR/Peg==" -H "Accept-Encoding: gzip, deflate, sdch" -H "Accept-Language: es-ES,es;q=0.8,en;q=0.6" -H "User-Agent: Mozilla/5.0 (Windows NT 6.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2490.86 Safari/537.36" -H "Accept: */*" -H "Referer: http://hqq.tv/" -H "X-Requested-With: XMLHttpRequest" -H "Connection: keep-alive" --compressed'
 #     urlStr = 'curl "http://hqq.tv/player/get_md5.php?b=1&vid=D5RM53HN4X3M&server=aHR0cDovLzlxZjdoOS52a2NhY2hlLmNvbQ%3D%3D&adb=0%2F&at=043a566afeb0bf2b668296a2128011d6&link=aGxzLXZvZC1zNi9mbHYvYXBpL2ZpbGVzL3ZpZGVvcy8yMDE1LzExLzI3LzE0NDg1Nzc5NjI2MjQzOD9zb2NrZXQ%3D"'
